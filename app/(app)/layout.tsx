@@ -16,6 +16,13 @@ export default async function AppLayout({
     redirect("/login");
   }
 
+  async function signOut() {
+    "use server";
+    const supabase = await createClient();
+    await supabase.auth.signOut();
+    redirect("/login");
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 flex">
       {/* Sidebar */}
@@ -51,8 +58,16 @@ export default async function AppLayout({
             <span>🖨️</span> 印刷プレビュー
           </Link>
         </nav>
-        <div className="p-3 border-t border-gray-100">
+        <div className="p-3 border-t border-gray-100 space-y-2">
           <p className="text-xs text-gray-400 px-3 truncate">{user.email}</p>
+          <form action={signOut}>
+            <button
+              type="submit"
+              className="w-full text-left px-3 py-1.5 rounded-lg text-xs text-gray-500 hover:bg-gray-100 transition-colors"
+            >
+              ログアウト
+            </button>
+          </form>
         </div>
       </aside>
 

@@ -175,6 +175,37 @@ curl -X POST /api/ocr \
 # → { "latex": "x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}" }
 ```
 
+## 認証
+
+Google OAuth のみを使用します。メールアドレス・パスワード認証は無効にしてください。
+
+### OAuth フロー
+
+```
+1. ユーザーが /login で「Googleでログイン」をクリック
+2. supabase.auth.signInWithOAuth({ provider: 'google' }) でリダイレクト
+3. Google 認証後、Supabase 経由で /auth/callback?code=... に戻る
+4. Route Handler がコードをセッションと交換して /dashboard へリダイレクト
+```
+
+### Supabase 側の設定
+
+1. Supabase Dashboard → Authentication → Providers → Google を有効化
+2. Google Cloud Console でOAuth 2.0 クライアントを作成
+   - 承認済みリダイレクト URI: `https://<supabase-project>.supabase.co/auth/v1/callback`
+3. クライアント ID・シークレットを Supabase の Google プロバイダー設定に入力
+4. Supabase Dashboard → Authentication → URL Configuration → Redirect URLs に追加:
+   - `http://localhost:3000/auth/callback`（ローカル開発）
+   - `https://<本番ドメイン>/auth/callback`（Vercel）
+
+### 関連ファイル
+
+| ファイル | 役割 |
+|---|---|
+| `app/(auth)/login/page.tsx` | Google ログインボタン |
+| `app/auth/callback/route.ts` | OAuth コールバック（コード交換 → リダイレクト） |
+| `app/(app)/layout.tsx` | 認証ガード + ログアウト（Server Action） |
+
 ## 開発フロー（ブランチ運用）
 
 ### ルール
