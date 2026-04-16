@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { MathRenderer } from "@/components/math/MathRenderer";
+import { MathMarkdownRenderer } from "@/components/math/MathMarkdownRenderer";
 
 export default async function ProblemsPage() {
   const supabase = await createClient();
@@ -53,10 +53,7 @@ export default async function ProblemsPage() {
                   </h3>
                   {problem.content_latex && (
                     <div className="text-gray-700 overflow-x-auto">
-                      <MathRenderer
-                        formula={problem.content_latex}
-                        displayMode
-                      />
+                      <MathMarkdownRenderer content={problem.content_latex} />
                     </div>
                   )}
                 </div>
