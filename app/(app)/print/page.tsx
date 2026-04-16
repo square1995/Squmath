@@ -1,7 +1,7 @@
 "use client";
 
 import { createClient } from "@/lib/supabase/client";
-import { MathRenderer } from "@/components/math/MathRenderer";
+import { MathMarkdownRenderer } from "@/components/math/MathMarkdownRenderer";
 
 export default async function PrintPage() {
   const supabase = await createClient();
@@ -59,10 +59,7 @@ export default async function PrintPage() {
                     </p>
                     {problem.content_latex && (
                       <div className="mb-4 overflow-x-auto">
-                        <MathRenderer
-                          formula={problem.content_latex}
-                          displayMode
-                        />
+                        <MathMarkdownRenderer content={problem.content_latex} />
                       </div>
                     )}
                     {/* Answer space */}
