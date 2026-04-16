@@ -13,15 +13,9 @@ export default function HomePage() {
           <nav className="flex gap-4">
             <Link
               href="/login"
-              className="text-gray-600 hover:text-primary-700 transition-colors"
-            >
-              ログイン
-            </Link>
-            <Link
-              href="/register"
               className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors"
             >
-              無料で始める
+              Googleでログイン
             </Link>
           </nav>
         </header>
@@ -39,10 +33,10 @@ export default function HomePage() {
           </p>
           <div className="flex gap-4 justify-center">
             <Link
-              href="/register"
+              href="/login"
               className="bg-primary-600 text-white px-8 py-4 rounded-xl text-lg font-semibold hover:bg-primary-700 transition-colors shadow-lg"
             >
-              無料で始める
+              Googleでログイン
             </Link>
             <Link
               href="/dashboard"
