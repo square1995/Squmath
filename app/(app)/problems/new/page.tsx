@@ -35,16 +35,11 @@ export default function NewProblemPage() {
 
       if (!res.ok) throw new Error(data.error ?? "OCRに失敗しました");
       setOcrResult(data.latex);
+      setContentLatex(data.latex);
     } catch (err) {
       setError(err instanceof Error ? err.message : "OCRに失敗しました");
     } finally {
       setOcrLoading(false);
-    }
-  }
-
-  function applyOcrResult() {
-    if (ocrResult !== null) {
-      setContentLatex(ocrResult);
     }
   }
 
@@ -133,18 +128,11 @@ export default function NewProblemPage() {
                   読み取り結果（編集できます）
                 </label>
                 <textarea
-                  value={ocrResult}
-                  onChange={(e) => setOcrResult(e.target.value)}
+                  value={contentLatex}
+                  onChange={(e) => setContentLatex(e.target.value)}
                   rows={6}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
                 />
-                <button
-                  type="button"
-                  onClick={applyOcrResult}
-                  className="w-full bg-primary-600 text-white py-1.5 rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors"
-                >
-                  LaTeX欄に反映する
-                </button>
               </div>
             )}
           </div>
