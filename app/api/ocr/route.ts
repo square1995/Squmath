@@ -1,27 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
 import { extractLatexFromImage } from "@/lib/gemini/client";
 
+const ALLOWED_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "application/pdf",
+];
+
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
-    const imageFile = formData.get("image") as File | null;
+    const file = formData.get("image") as File | null;
 
-    if (!imageFile) {
-      return NextResponse.json({ error: "画像ファイルが必要です" }, { status: 400 });
+    if (!file) {
+      return NextResponse.json({ error: "ファイルが必要です" }, { status: 400 });
     }
 
-    const allowedTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
-    if (!allowedTypes.includes(imageFile.type)) {
+    if (!ALLOWED_TYPES.includes(file.type)) {
       return NextResponse.json(
-        { error: "JPEG、PNG、WebP、GIF形式の画像のみ対応しています" },
+        { error: "JPEG・PNG・WebP・GIF・PDF形式のファイルのみ対応しています" },
         { status: 400 }
       );
     }
 
-    const bytes = await imageFile.arrayBuffer();
+    const bytes = await file.arrayBuffer();
     const base64 = Buffer.from(bytes).toString("base64");
 
-    const latex = await extractLatexFromImage(base64, imageFile.type);
+    const latex = await extractLatexFromImage(base64, file.type);
 
     return NextResponse.json({ latex });
   } catch (error) {

@@ -14,29 +14,37 @@ export default function NewProblemPage() {
   const [contentLatex, setContentLatex] = useState("");
   const [subject, setSubject] = useState("");
   const [difficulty, setDifficulty] = useState<number>(3);
-  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [ocrResult, setOcrResult] = useState<string | null>(null);
   const [ocrLoading, setOcrLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function handleOcr() {
-    if (!imageFile) return;
+    if (!file) return;
     setOcrLoading(true);
     setError(null);
+    setOcrResult(null);
 
     try {
       const formData = new FormData();
-      formData.append("image", imageFile);
+      formData.append("image", file);
 
       const res = await fetch("/api/ocr", { method: "POST", body: formData });
       const data = await res.json();
 
       if (!res.ok) throw new Error(data.error ?? "OCRに失敗しました");
-      setContentLatex(data.latex);
+      setOcrResult(data.latex);
     } catch (err) {
       setError(err instanceof Error ? err.message : "OCRに失敗しました");
     } finally {
       setOcrLoading(false);
+    }
+  }
+
+  function applyOcrResult() {
+    if (ocrResult !== null) {
+      setContentLatex(ocrResult);
     }
   }
 
@@ -85,7 +93,7 @@ export default function NewProblemPage() {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              数式（LaTeX）
+              問題文・数式（LaTeX）
             </label>
             <textarea
               value={contentLatex}
@@ -99,22 +107,50 @@ export default function NewProblemPage() {
           {/* OCR section */}
           <div className="bg-gray-50 rounded-lg p-4 space-y-3">
             <p className="text-sm font-medium text-gray-700">
-              AI OCR（画像から数式を読み取る）
+              AI OCR（画像・PDFから問題を読み取る）
             </p>
             <input
               type="file"
-              accept="image/*"
-              onChange={(e) => setImageFile(e.target.files?.[0] ?? null)}
+              accept="image/jpeg,image/png,image/webp,image/gif,application/pdf"
+              onChange={(e) => {
+                setFile(e.target.files?.[0] ?? null);
+                setOcrResult(null);
+              }}
               className="text-sm text-gray-600"
             />
+            <p className="text-xs text-gray-400">
+              JPG・PNG・WebP・GIF・PDF に対応
+            </p>
             <button
               type="button"
               onClick={handleOcr}
-              disabled={!imageFile || ocrLoading}
+              disabled={!file || ocrLoading}
               className="bg-gray-700 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-gray-800 disabled:opacity-40 transition-colors"
             >
               {ocrLoading ? "読み取り中..." : "OCRで読み取る"}
             </button>
+
+            {/* OCR result editable area */}
+            {ocrResult !== null && (
+              <div className="space-y-2 pt-1">
+                <label className="block text-xs font-medium text-gray-600">
+                  読み取り結果（編集できます）
+                </label>
+                <textarea
+                  value={ocrResult}
+                  onChange={(e) => setOcrResult(e.target.value)}
+                  rows={6}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
+                />
+                <button
+                  type="button"
+                  onClick={applyOcrResult}
+                  className="w-full bg-primary-600 text-white py-1.5 rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors"
+                >
+                  LaTeX欄に反映する
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">
