@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useSearchParams } from "next/navigation";
 
-export default function LoginPage() {
+function LoginForm() {
   const [loading, setLoading] = useState(false);
   const searchParams = useSearchParams();
   const hasError = searchParams.get("error") === "auth";
@@ -22,6 +22,27 @@ export default function LoginPage() {
   }
 
   return (
+    <>
+      {hasError && (
+        <p className="text-red-600 text-sm bg-red-50 rounded-lg px-3 py-2 mb-4 text-center">
+          ログインに失敗しました。もう一度お試しください。
+        </p>
+      )}
+
+      <button
+        onClick={handleGoogleLogin}
+        disabled={loading}
+        className="w-full flex items-center justify-center gap-3 border border-gray-300 rounded-lg px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors"
+      >
+        <GoogleIcon />
+        {loading ? "リダイレクト中..." : "Googleでログイン"}
+      </button>
+    </>
+  );
+}
+
+export default function LoginPage() {
+  return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="w-full max-w-md">
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
@@ -34,20 +55,9 @@ export default function LoginPage() {
             </p>
           </div>
 
-          {hasError && (
-            <p className="text-red-600 text-sm bg-red-50 rounded-lg px-3 py-2 mb-4 text-center">
-              ログインに失敗しました。もう一度お試しください。
-            </p>
-          )}
-
-          <button
-            onClick={handleGoogleLogin}
-            disabled={loading}
-            className="w-full flex items-center justify-center gap-3 border border-gray-300 rounded-lg px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors"
-          >
-            <GoogleIcon />
-            {loading ? "リダイレクト中..." : "Googleでログイン"}
-          </button>
+          <Suspense>
+            <LoginForm />
+          </Suspense>
         </div>
       </div>
     </div>
