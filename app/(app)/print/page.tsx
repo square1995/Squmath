@@ -1,6 +1,6 @@
 "use client";
 
-import { createClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/client";
 import { MathRenderer } from "@/components/math/MathRenderer";
 
 export default async function PrintPage() {
