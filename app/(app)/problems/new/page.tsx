@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
 import { MathRenderer } from "@/components/math/MathRenderer";
+import { saveProblem } from "../actions";
 
 const SUBJECTS = ["数学I", "数学A", "数学II", "数学B", "数学III", "数学C", "その他"];
 const DIFFICULTIES = [1, 2, 3, 4, 5];
@@ -53,30 +53,17 @@ export default function NewProblemPage() {
     setSaving(true);
     setError(null);
 
-    const supabase = createClient();
-
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      setError("ログインが必要です");
-      setSaving(false);
-      return;
-    }
-
-    const { error } = await supabase.from("problems").insert({
+    const result = await saveProblem({
       title,
       content_latex: contentLatex,
       subject: subject || null,
       difficulty,
-      user_id: user.id,
     });
 
-    if (error) {
-      setError(error.message);
+    if (result?.error) {
+      setError(result.error);
       setSaving(false);
-      return;
     }
-
-    router.push("/problems");
   }
 
   return (
