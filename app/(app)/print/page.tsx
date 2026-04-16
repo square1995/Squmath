@@ -48,7 +48,7 @@ export default async function PrintPage() {
         ) : (
           <div className="space-y-8">
             {problems.map((problem, index) => (
-              <div key={problem.id} className="break-inside-avoid">
+              <div key={problem.id} className="problem-item">
                 <div className="flex items-start gap-3">
                   <span className="font-bold text-lg min-w-[2rem]">
                     [{index + 1}]
@@ -91,6 +91,9 @@ export default async function PrintPage() {
             border: none !important;
             border-radius: 0 !important;
             padding: 20mm !important;
+          }
+          .problem-item {
+            break-inside: avoid;
           }
         }
       `}</style>
