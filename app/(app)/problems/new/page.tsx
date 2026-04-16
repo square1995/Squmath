@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { MathRenderer } from "@/components/math/MathRenderer";
+import { MathMarkdownRenderer } from "@/components/math/MathMarkdownRenderer";
 import { saveProblem } from "../actions";
 
 const SUBJECTS = ["数学I", "数学A", "数学II", "数学B", "数学III", "数学C", "その他"];
@@ -200,16 +200,14 @@ export default function NewProblemPage() {
         {/* Preview */}
         <div className="bg-white rounded-xl border border-gray-100 p-6">
           <h2 className="text-sm font-medium text-gray-500 mb-4">
-            数式プレビュー
+            プレビュー
           </h2>
           {contentLatex ? (
-            <div className="overflow-x-auto">
-              <MathRenderer formula={contentLatex} displayMode />
-            </div>
+            <MathMarkdownRenderer content={contentLatex} />
           ) : (
             <div className="text-center py-12 text-gray-300">
               <div className="text-4xl mb-2">∑</div>
-              <p className="text-sm">LaTeXを入力するとプレビューが表示されます</p>
+              <p className="text-sm">入力するとプレビューが表示されます</p>
             </div>
           )}
         </div>
