@@ -174,3 +174,38 @@ curl -X POST /api/ocr \
   -F "image=@problem.jpg"
 # → { "latex": "x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}" }
 ```
+
+## 開発フロー（ブランチ運用）
+
+### ルール
+- **開発は必ずフィーチャーブランチで行う**。`main` ブランチには直接コミットしない。
+- 作業完了後、フィーチャーブランチを `main` にマージして `main` を最新に保つ。
+- Vercel へのプロダクションデプロイは `main` への push で自動実行される（GitHub Actions）。
+
+### Claude Code による開発時のブランチ命名
+Claude Code が自動生成するブランチ名の形式：
+```
+claude/<作業内容の要約>-<ランダムID>
+```
+
+### 作業の流れ
+```bash
+# 1. フィーチャーブランチで開発・コミット・プッシュ
+git checkout -b claude/feature-name-XXXXX
+# ... 開発 ...
+git add <files>
+git commit -m "feat: ..."
+git push -u origin claude/feature-name-XXXXX
+
+# 2. main にマージして本番反映
+git checkout main
+git merge --no-ff claude/feature-name-XXXXX -m "Merge branch 'claude/feature-name-XXXXX'"
+git push origin main
+
+# 3. フィーチャーブランチの後片付け（任意）
+git branch -d claude/feature-name-XXXXX
+```
+
+### ブランチ保護の推奨設定（GitHub → Settings → Branches）
+- `main` ブランチに直接 push を禁止（require pull request）したい場合は Branch protection rules を設定してください。
+- CI（GitHub Actions）の通過を必須にする場合は「Require status checks to pass」を有効化。
