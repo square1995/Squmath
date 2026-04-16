@@ -54,11 +54,20 @@ export default function NewProblemPage() {
     setError(null);
 
     const supabase = createClient();
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      setError("ログインが必要です");
+      setSaving(false);
+      return;
+    }
+
     const { error } = await supabase.from("problems").insert({
       title,
       content_latex: contentLatex,
       subject: subject || null,
       difficulty,
+      user_id: user.id,
     });
 
     if (error) {
