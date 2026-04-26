@@ -1,304 +1,68 @@
-# Squmath — プロジェクト構成メモ
+# Squmath
 
-## 概要
-Squmath は数学専門のプリント作成 Web アプリです。
-問題の入力・OCR 取込・LaTeX 編集・印刷プレビューをひとつのツールで提供します。
+数研出版「Studyaid D.B.」相当のプリント作成 Web アプリ。S-quire とは独立した別プロジェクト。
+
+## プロジェクト概要
+
+- **目的**: 数学プリント作成アプリ（Studyaid D.B. の機能を Web 上で再現）
+- **対象**: 数学のみ（中学数学・高校数学）
+- **利用者**: S-quire スタッフ（管理者: シンジさん一人）
+- **公開範囲**: 社内ツール（Google アカウント認証で許可された人のみ）
+
+## モジュール化されたドキュメント
+
+詳細は以下のファイルを参照:
+
+- [DESIGN.md](./DESIGN.md) - 全体設計、テーブル構成、権限モデル、API 設計
+- [DATA.md](./DATA.md) - データ構造の詳細、JSONB スキーマ、CREATE TABLE 文
+- [DEPLOY.md](./DEPLOY.md) - デプロイ手順、環境構築、Cloudflare / Supabase 設定
+- [CODING.md](./CODING.md) - コーディング規約、命名規則、API レスポンス形式
+- [LATEX_GUIDELINES.md](./LATEX_GUIDELINES.md) - LaTeX 記法ガイドライン
 
 ## 技術スタック
 
-| カテゴリ | 技術 | バージョン |
-|---|---|---|
-| フロントエンド/バックエンド | Next.js (App Router) | ^14.2.0 |
-| スタイリング | Tailwind CSS | ^3.4.0 |
-| データベース/認証 | Supabase | ^2.45.0 |
-| AI / OCR | Gemini API (gemini-1.5-flash) | @google/generative-ai ^0.21.0 |
-| 数式表示 | KaTeX | ^0.16.11 |
-| ホスティング | Vercel (GitHub Actions 経由) | — |
+- **フロント**: Cloudflare Pages
+- **バックエンド**: Cloudflare Workers
+- **DB**: Supabase (PostgreSQL + RLS)
+- **認証**: Supabase Auth + Google OAuth
+- **ストレージ**: Supabase Storage
+- **数式表示**: KaTeX
+- **数式入力**: MathLive
+- **図形・グラフ**: GeoGebra
 
-## ディレクトリ構成
+## 開発フェーズ
 
-```
-squmath/
-├── app/
-│   ├── layout.tsx              # ルートレイアウト (KaTeX CSS import)
-│   ├── page.tsx                # ランディングページ
-│   ├── globals.css             # Tailwind + 印刷用スタイル
-│   ├── api/
-│   │   └── ocr/route.ts        # Gemini OCR API エンドポイント
-│   ├── (auth)/                 # 認証ページ (ログイン/登録)
-│   └── (app)/                  # 認証必須ページ
-│       ├── layout.tsx          # サイドバー付きレイアウト (auth guard)
-│       ├── dashboard/          # ダッシュボード
-│       ├── problems/           # 問題一覧 & 作成
-│       └── print/              # 印刷プレビュー
-├── components/
-│   ├── math/MathRenderer.tsx   # KaTeX ラッパー (Client Component)
-│   └── ui/Button.tsx           # 汎用ボタン
-├── lib/
-│   ├── supabase/
-│   │   ├── client.ts           # ブラウザ用 (createBrowserClient)
-│   │   └── server.ts           # サーバー用 (createServerClient + cookies)
-│   └── gemini/
-│       └── client.ts           # Gemini API クライアント + extractLatexFromImage()
-├── types/index.ts              # 共有 TypeScript 型
-└── .github/workflows/
-    └── deploy.yml              # GitHub Actions → Vercel デプロイ
-```
-
-## 環境変数
-
-`.env.local.example` をコピーして `.env.local` を作成してください。
-
-| 変数名 | 説明 | 公開 |
-|---|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase プロジェクト URL | ✅ public |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase 匿名キー | ✅ public |
-| `SUPABASE_SERVICE_ROLE_KEY` | サービスロールキー（サーバーのみ） | ❌ secret |
-| `GEMINI_API_KEY` | Google AI Studio API キー | ❌ secret |
-
-## Supabase セットアップ
-
-### テーブル定義
-
-```sql
--- 問題テーブル
-create table problems (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid references auth.users(id) on delete cascade not null,
-  title text not null,
-  content_latex text,
-  subject text,
-  difficulty integer check (difficulty between 1 and 5),
-  created_at timestamptz default now() not null
-);
-
--- ワークシート (プリント) テーブル
-create table worksheets (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid references auth.users(id) on delete cascade not null,
-  title text not null,
-  description text,
-  created_at timestamptz default now() not null
-);
-
--- 問題とワークシートの中間テーブル
-create table worksheet_problems (
-  worksheet_id uuid references worksheets(id) on delete cascade,
-  problem_id uuid references problems(id) on delete cascade,
-  sort_order integer not null default 0,
-  primary key (worksheet_id, problem_id)
-);
-
--- Row Level Security
-alter table problems enable row level security;
-alter table worksheets enable row level security;
-alter table worksheet_problems enable row level security;
-
--- ポリシー: 自分のデータのみ操作可能
-create policy "users can manage own problems"
-  on problems for all using (auth.uid() = user_id);
-
-create policy "users can manage own worksheets"
-  on worksheets for all using (auth.uid() = user_id);
-
-create policy "users can manage own worksheet_problems"
-  on worksheet_problems for all
-  using (
-    worksheet_id in (
-      select id from worksheets where user_id = auth.uid()
-    )
-  );
-```
-
-### Supabase Dashboard での設定
-1. [supabase.com](https://supabase.com) でプロジェクト作成
-2. SQL Editor で上記 DDL を実行
-3. Authentication → Email を有効化
-4. プロジェクト設定から URL と API キーを取得
-
-## Vercel デプロイ設定
-
-### GitHub Actions secrets（リポジトリ設定で追加）
-
-| Secret 名 | 取得場所 |
+| Phase | 内容 |
 |---|---|
-| `VERCEL_TOKEN` | Vercel アカウント設定 → Tokens |
-| `VERCEL_ORG_ID` | `vercel link` 実行後 `.vercel/project.json` の `orgId` |
-| `VERCEL_PROJECT_ID` | `vercel link` 実行後 `.vercel/project.json` の `projectId` |
+| Phase 1 | 認証 + users + 基本問題 CRUD |
+| Phase 2 | 検索・絞り込み（生成カラム、タグ、フォルダ） |
+| Phase 3 | プリント作成（worksheets + blocks） |
+| Phase 4 | 数式エディタ（MathLive）統合 |
+| Phase 5 | PDF 出力（出力モード切替対応） |
+| Phase 6 | 図形（GeoGebra）統合 |
+| Phase 7 | 対応表検索、自動作問、その他拡張 |
 
-### Vercel 環境変数
-Vercel Dashboard → Project Settings → Environment Variables に以下を追加：
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `GEMINI_API_KEY`
+## 設計方針（最重要・絶対遵守）
 
-## ローカル開発
+- コア構造は固定
+- 拡張は `content` / `meta`（JSONB）で行う
+- 変更ではなく追加で対応する
+- フロントは計算・問題生成・権限制御をしない
+- DB は保存と RLS のみ、業務ロジックは持たない
+- `owner_id` はフロントから送らず、Workers が JWT から取得
+- 削除は論理削除のみ、完全削除は admin が手動
 
-```bash
-# 依存関係のインストール
-npm install
+## NEVER（やってはいけないこと）
 
-# 環境変数の設定
-cp .env.local.example .env.local
-# .env.local を編集して実際の値を設定
+- フロントエンドで `owner_id` を決めて送信する
+- `meta.tags` の配列で運用する（`tags` テーブルへ正規化済み）
+- `worksheet_items` を作る（`worksheet_blocks` に統合済み）
+- master データを staff が直接編集する処理を書く（自動コピー必須）
+- DB に業務ロジックを実装する（RLS は権限制御のみ）
+- 既存カラムの型や意味を変更する（必ず新規追加で対応）
+- 教科を増やす（数学専用、理科その他は対象外）
 
-# 開発サーバー起動
-npm run dev
-# → http://localhost:3000
+## 関連リポジトリ
 
-# ビルド確認
-npm run build
-```
-
-## KaTeX の使い方
-
-`MathRenderer` コンポーネントを使って数式を表示します。
-
-```tsx
-import { MathRenderer } from "@/components/math/MathRenderer";
-
-// インライン数式
-<MathRenderer formula="x^2 + y^2 = r^2" />
-
-// ディスプレイ数式（中央揃え、大きめ）
-<MathRenderer formula="\int_0^\infty e^{-x} dx = 1" displayMode />
-```
-
-## Gemini OCR の使い方
-
-`/api/ocr` エンドポイントに画像ファイルを POST すると LaTeX が返ります。
-
-```bash
-curl -X POST /api/ocr \
-  -F "image=@problem.jpg"
-# → { "latex": "x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}" }
-```
-
-## 認証
-
-Google OAuth のみを使用します。メールアドレス・パスワード認証は無効にしてください。
-
-### OAuth フロー
-
-```
-1. ユーザーが /login で「Googleでログイン」をクリック
-2. supabase.auth.signInWithOAuth({ provider: 'google' }) でリダイレクト
-3. Google 認証後、Supabase 経由で /auth/callback?code=... に戻る
-4. Route Handler がコードをセッションと交換して /dashboard へリダイレクト
-```
-
-### Supabase 側の設定
-
-1. Supabase Dashboard → Authentication → Providers → Google を有効化
-2. Google Cloud Console でOAuth 2.0 クライアントを作成
-   - 承認済みリダイレクト URI: `https://<supabase-project>.supabase.co/auth/v1/callback`
-3. クライアント ID・シークレットを Supabase の Google プロバイダー設定に入力
-4. Supabase Dashboard → Authentication → URL Configuration → Redirect URLs に追加:
-   - `http://localhost:3000/auth/callback`（ローカル開発）
-   - `https://<本番ドメイン>/auth/callback`（Vercel）
-
-### 関連ファイル
-
-| ファイル | 役割 |
-|---|---|
-| `app/(auth)/login/page.tsx` | Google ログインボタン |
-| `app/auth/callback/route.ts` | OAuth コールバック（コード交換 → リダイレクト） |
-| `app/(app)/layout.tsx` | 認証ガード + ログアウト（Server Action） |
-
-## よくあるビルドエラーと対処法
-
-### `next.config.ts` が使えない
-`.ts` 拡張子の Next.js 設定ファイルはサポートされていないバージョンがある。
-
-**対処:** `next.config.ts` → `next.config.mjs` にリネームし、TypeScript 型アノテーションを JSDoc コメントに置き換える。
-
-```js
-// next.config.mjs
-/** @type {import('next').NextConfig} */
-const nextConfig = { ... };
-export default nextConfig;
-```
-
-### Client Component で `lib/supabase/server.ts` をインポートしている
-`createServerClient` は Node.js の `cookies()` API に依存するため、Client Component では使用できない。
-
-**対処:** `"use client"` が付いているファイルでは `lib/supabase/client.ts` を使う。
-
-```ts
-// ❌ Client Component での誤ったインポート
-import { createClient } from "@/lib/supabase/server";
-
-// ✅ 正しいインポート
-import { createClient } from "@/lib/supabase/client";
-```
-
-### `useSearchParams()` が Suspense でラップされていない
-Next.js では `useSearchParams()` を使うコンポーネントは `<Suspense>` 境界の内側に置く必要がある。ラップしないとビルドエラーになる。
-
-**対処:** `useSearchParams()` を使う部分を子コンポーネントに切り出し、親で `<Suspense>` でラップする。
-
-```tsx
-import { Suspense } from "react";
-import { useSearchParams } from "next/navigation";
-
-function Inner() {
-  const searchParams = useSearchParams();
-  // ...
-}
-
-export default function Page() {
-  return (
-    <Suspense>
-      <Inner />
-    </Suspense>
-  );
-}
-```
-
-### `"use client"` が必要なページに付いていない
-`onClick` などのイベントハンドラや React フック（`useState` など）を使うコンポーネントは Client Component にする必要がある。
-
-**対処:** ファイルの先頭（インポートより前）に `"use client";` を追加する。
-
-```tsx
-"use client";  // ← 必ずファイルの先頭に
-
-import { useState } from "react";
-// ...
-```
-
-## 開発フロー（ブランチ運用）
-
-### ルール
-- **開発は必ずフィーチャーブランチで行う**。`main` ブランチには直接コミットしない。
-- 作業完了後、フィーチャーブランチを `main` にマージして `main` を最新に保つ。
-- Vercel へのプロダクションデプロイは `main` への push で自動実行される（GitHub Actions）。
-
-### Claude Code による開発時のブランチ命名
-Claude Code が自動生成するブランチ名の形式：
-```
-claude/<作業内容の要約>-<ランダムID>
-```
-
-### 作業の流れ
-```bash
-# 1. フィーチャーブランチで開発・コミット・プッシュ
-git checkout -b claude/feature-name-XXXXX
-# ... 開発 ...
-git add <files>
-git commit -m "feat: ..."
-git push -u origin claude/feature-name-XXXXX
-
-# 2. main にマージして本番反映
-git checkout main
-git merge --no-ff claude/feature-name-XXXXX -m "Merge branch 'claude/feature-name-XXXXX'"
-git push origin main
-
-# 3. フィーチャーブランチの後片付け（任意）
-git branch -d claude/feature-name-XXXXX
-```
-
-### ブランチ保護の推奨設定（GitHub → Settings → Branches）
-- `main` ブランチに直接 push を禁止（require pull request）したい場合は Branch protection rules を設定してください。
-- CI（GitHub Actions）の通過を必須にする場合は「Require status checks to pass」を有効化。
+- `square1995/S-quire` - 塾管理アプリ（別プロジェクト、参考のみ）
+- `square1995/englishtest` - 英単語テストアプリ（別プロジェクト、参考のみ）
