@@ -5,18 +5,19 @@ import type { UpdateProblemBody } from "@/types/api";
 
 export const runtime = "edge";
 
-type Ctx = { params: { id: string } };
+type Ctx = { params: Promise<{ id: string }> };
 
 // GET /api/problems/[id]  1 件取得
 export async function GET(_request: Request, { params }: Ctx) {
   const auth = await requireUser();
   if (auth.response) return auth.response;
 
-  const supabase = createServerSupabase();
+  const { id } = await params;
+  const supabase = await createServerSupabase();
   const { data, error } = await supabase
     .from("problems")
     .select("*")
-    .eq("id", params.id)
+    .eq("id", id)
     .maybeSingle();
 
   if (error) {
@@ -52,11 +53,12 @@ export async function PUT(request: Request, { params }: Ctx) {
     return err("VALIDATION", "更新する項目がありません", 400);
   }
 
-  const supabase = createServerSupabase();
+  const { id } = await params;
+  const supabase = await createServerSupabase();
   const { data, error } = await supabase
     .from("problems")
     .update(update)
-    .eq("id", params.id)
+    .eq("id", id)
     .select()
     .single();
 
@@ -72,15 +74,16 @@ export async function DELETE(_request: Request, { params }: Ctx) {
   const auth = await requireUser();
   if (auth.response) return auth.response;
 
-  const supabase = createServerSupabase();
+  const { id } = await params;
+  const supabase = await createServerSupabase();
   const { error } = await supabase
     .from("problems")
     .update({ deleted_at: new Date().toISOString() })
-    .eq("id", params.id);
+    .eq("id", id);
 
   if (error) {
     console.error("[DELETE /api/problems/:id] db error", error);
     return err("INTERNAL", "削除に失敗しました", 500);
   }
-  return ok({ id: params.id });
+  return ok({ id });
 }

@@ -1,8 +1,10 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { cookies } from "next/headers";
 
-export function createServerSupabase() {
-  const cookieStore = cookies();
+// Next.js 15 で cookies() が Promise を返すようになったため async に変更。
+// 呼び出し側は必ず await createServerSupabase() で取得すること。
+export async function createServerSupabase() {
+  const cookieStore = await cookies();
 
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,

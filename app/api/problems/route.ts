@@ -10,7 +10,7 @@ export async function GET() {
   const auth = await requireUser();
   if (auth.response) return auth.response;
 
-  const supabase = createServerSupabase();
+  const supabase = await createServerSupabase();
   const { data, error } = await supabase
     .from("problems")
     .select("*")
@@ -40,7 +40,7 @@ export async function POST(request: Request) {
     return err("VALIDATION", "タイトルを入力してください", 400);
   }
 
-  const supabase = createServerSupabase();
+  const supabase = await createServerSupabase();
   const { data, error } = await supabase
     .from("problems")
     .insert({

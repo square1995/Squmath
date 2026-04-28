@@ -7,7 +7,7 @@ import type { User } from "@supabase/supabase-js";
 export async function requireUser(): Promise<
   { user: User; response: null } | { user: null; response: Response }
 > {
-  const supabase = createServerSupabase();
+  const supabase = await createServerSupabase();
   const {
     data: { user },
   } = await supabase.auth.getUser();
