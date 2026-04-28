@@ -1,180 +1,85 @@
-# Squmath — プロジェクト構成メモ
+# Squmath
 
-## 概要
-Squmath は数学専門のプリント作成 Web アプリです。
-問題の入力・OCR 取込・LaTeX 編集・印刷プレビューをひとつのツールで提供します。
+数研出版「Studyaid D.B.」相当のプリント作成 Web アプリ。S-quire とは独立した別プロジェクト。
+
+## プロジェクト概要
+
+- **目的**: 数学プリント作成アプリ（Studyaid D.B. の機能を Web 上で再現）
+- **対象**: 数学のみ（中学数学・高校数学）
+- **利用者**: S-quire スタッフ（管理者: シンジさん一人）
+- **公開範囲**: 社内ツール（Google アカウント認証で許可された人のみ）
+
+## モジュール化されたドキュメント
+
+詳細は以下のファイルを参照:
+
+- [DESIGN.md](./DESIGN.md) - 全体設計、テーブル構成、権限モデル、API 設計
+- [DATA.md](./DATA.md) - データ構造の詳細、JSONB スキーマ、CREATE TABLE 文
+- [DEPLOY.md](./DEPLOY.md) - デプロイ手順、環境構築、Cloudflare / Supabase 設定
+- [CODING.md](./CODING.md) - コーディング規約、命名規則、API レスポンス形式
+- [LATEX_GUIDELINES.md](./LATEX_GUIDELINES.md) - LaTeX 記法ガイドライン
 
 ## 技術スタック
 
-| カテゴリ | 技術 | バージョン |
-|---|---|---|
-| フロントエンド/バックエンド | Next.js (App Router) | ^14.2.0 |
-| スタイリング | Tailwind CSS | ^3.4.0 |
-| データベース/認証 | Supabase | ^2.45.0 |
-| AI / OCR | Gemini API (gemini-1.5-flash) | @google/generative-ai ^0.21.0 |
-| 数式表示 | KaTeX | ^0.16.11 |
-| ホスティング | Vercel (GitHub Actions 経由) | — |
+- **フロント**: Cloudflare Pages
+- **バックエンド**: Cloudflare Workers
+- **DB**: Supabase (PostgreSQL + RLS)
+- **認証**: Supabase Auth + Google OAuth
+- **ストレージ**: Supabase Storage
+- **数式表示**: KaTeX
+- **数式入力**: MathLive
+- **図形・グラフ**: GeoGebra
 
-## ディレクトリ構成
+## 開発フェーズ
+
+| Phase | 内容 |
+|---|---|
+| Phase 1 | 認証 + users + 基本問題 CRUD |
+| Phase 2 | 検索・絞り込み（生成カラム、タグ、フォルダ） |
+| Phase 3 | プリント作成（worksheets + blocks） |
+| Phase 4 | 数式エディタ（MathLive）統合 |
+| Phase 5 | PDF 出力（出力モード切替対応） |
+| Phase 6 | 図形（GeoGebra）統合 |
+| Phase 7 | 対応表検索、自動作問、その他拡張 |
+
+## 設計方針（最重要・絶対遵守）
+
+- コア構造は固定
+- 拡張は `content` / `meta`（JSONB）で行う
+- 変更ではなく追加で対応する
+- フロントは計算・問題生成・権限制御をしない
+- DB は保存と RLS のみ、業務ロジックは持たない
+- `owner_id` はフロントから送らず、Workers が JWT から取得
+- 削除は論理削除のみ、完全削除は admin が手動
+
+## NEVER（やってはいけないこと）
+
+- フロントエンドで `owner_id` を決めて送信する
+- `meta.tags` の配列で運用する（`tags` テーブルへ正規化済み）
+- `worksheet_items` を作る（`worksheet_blocks` に統合済み）
+- master データを staff が直接編集する処理を書く（自動コピー必須）
+- DB に業務ロジックを実装する（RLS は権限制御のみ）
+- 既存カラムの型や意味を変更する（必ず新規追加で対応）
+- 教科を増やす（数学専用、理科その他は対象外）
+
+## 関連リポジトリ
+
+- `square1995/S-quire` - 塾管理アプリ（別プロジェクト、参考のみ）
+- `square1995/englishtest` - 英単語テストアプリ（別プロジェクト、参考のみ）
+
+## ファイル構成（リポジトリ直下）
 
 ```
 squmath/
-├── app/
-│   ├── layout.tsx              # ルートレイアウト (KaTeX CSS import)
-│   ├── page.tsx                # ランディングページ
-│   ├── globals.css             # Tailwind + 印刷用スタイル
-│   ├── api/
-│   │   └── ocr/route.ts        # Gemini OCR API エンドポイント
-│   ├── (auth)/                 # 認証ページ (ログイン/登録)
-│   └── (app)/                  # 認証必須ページ
-│       ├── layout.tsx          # サイドバー付きレイアウト (auth guard)
-│       ├── dashboard/          # ダッシュボード
-│       ├── problems/           # 問題一覧 & 作成
-│       └── print/              # 印刷プレビュー
-├── components/
-│   ├── math/MathRenderer.tsx   # KaTeX ラッパー (Client Component)
-│   └── ui/Button.tsx           # 汎用ボタン
-├── lib/
-│   ├── supabase/
-│   │   ├── client.ts           # ブラウザ用 (createBrowserClient)
-│   │   └── server.ts           # サーバー用 (createServerClient + cookies)
-│   └── gemini/
-│       └── client.ts           # Gemini API クライアント + extractLatexFromImage()
-├── types/index.ts              # 共有 TypeScript 型
+├── CLAUDE.md                       # このファイル（中核ルール）
+├── DESIGN.md / DATA.md / ...       # モジュール化されたドキュメント
+├── .env.local.example
 └── .github/workflows/
-    ├── deploy.yml              # GitHub Actions → Vercel デプロイ
-    └── merge-to-main.yml       # claude/** ブランチを main に自動マージ
+    ├── deploy.yml                  # main への push で Cloudflare Pages にデプロイ
+    └── merge-to-main.yml           # claude/** ブランチを main へ自動マージ
 ```
 
-## 環境変数
-
-`.env.local.example` をコピーして `.env.local` を作成してください。
-
-| 変数名 | 説明 | 公開 |
-|---|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase プロジェクト URL | ✅ public |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase 匿名キー | ✅ public |
-| `SUPABASE_SERVICE_ROLE_KEY` | サービスロールキー（サーバーのみ） | ❌ secret |
-| `GEMINI_API_KEY` | Google AI Studio API キー | ❌ secret |
-
-## Supabase セットアップ
-
-### テーブル定義
-
-```sql
--- 問題テーブル
-create table problems (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid references auth.users(id) on delete cascade not null,
-  title text not null,
-  content_latex text,
-  subject text,
-  difficulty integer check (difficulty between 1 and 5),
-  created_at timestamptz default now() not null
-);
-
--- ワークシート (プリント) テーブル
-create table worksheets (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid references auth.users(id) on delete cascade not null,
-  title text not null,
-  description text,
-  created_at timestamptz default now() not null
-);
-
--- 問題とワークシートの中間テーブル
-create table worksheet_problems (
-  worksheet_id uuid references worksheets(id) on delete cascade,
-  problem_id uuid references problems(id) on delete cascade,
-  sort_order integer not null default 0,
-  primary key (worksheet_id, problem_id)
-);
-
--- Row Level Security
-alter table problems enable row level security;
-alter table worksheets enable row level security;
-alter table worksheet_problems enable row level security;
-
--- ポリシー: 自分のデータのみ操作可能
-create policy "users can manage own problems"
-  on problems for all using (auth.uid() = user_id);
-
-create policy "users can manage own worksheets"
-  on worksheets for all using (auth.uid() = user_id);
-
-create policy "users can manage own worksheet_problems"
-  on worksheet_problems for all
-  using (
-    worksheet_id in (
-      select id from worksheets where user_id = auth.uid()
-    )
-  );
-```
-
-### Supabase Dashboard での設定
-1. [supabase.com](https://supabase.com) でプロジェクト作成
-2. SQL Editor で上記 DDL を実行
-3. Authentication → Email を有効化
-4. プロジェクト設定から URL と API キーを取得
-
-## Vercel デプロイ設定
-
-### GitHub Actions secrets（リポジトリ設定で追加）
-
-| Secret 名 | 取得場所 |
-|---|---|
-| `VERCEL_TOKEN` | Vercel アカウント設定 → Tokens |
-| `VERCEL_ORG_ID` | `vercel link` 実行後 `.vercel/project.json` の `orgId` |
-| `VERCEL_PROJECT_ID` | `vercel link` 実行後 `.vercel/project.json` の `projectId` |
-
-### Vercel 環境変数
-Vercel Dashboard → Project Settings → Environment Variables に以下を追加：
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `GEMINI_API_KEY`
-
-## ローカル開発
-
-```bash
-# 依存関係のインストール
-npm install
-
-# 環境変数の設定
-cp .env.local.example .env.local
-# .env.local を編集して実際の値を設定
-
-# 開発サーバー起動
-npm run dev
-# → http://localhost:3000
-
-# ビルド確認
-npm run build
-```
-
-## KaTeX の使い方
-
-`MathRenderer` コンポーネントを使って数式を表示します。
-
-```tsx
-import { MathRenderer } from "@/components/math/MathRenderer";
-
-// インライン数式
-<MathRenderer formula="x^2 + y^2 = r^2" />
-
-// ディスプレイ数式（中央揃え、大きめ）
-<MathRenderer formula="\int_0^\infty e^{-x} dx = 1" displayMode />
-```
-
-## Gemini OCR の使い方
-
-`/api/ocr` エンドポイントに画像ファイルを POST すると LaTeX が返ります。
-
-```bash
-curl -X POST /api/ocr \
-  -F "image=@problem.jpg"
-# → { "latex": "x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}" }
-```
+ソースコード(`app/`, `workers/`, `lib/` 等)は Phase 1 着手時に追加していきます。
 
 ---
 
@@ -202,14 +107,14 @@ curl -X POST /api/ocr \
 
 - **開発は必ず `claude/<作業内容>-<ID>` ブランチで行う**。`main` への直接コミット・直接 push は禁止。
 - `claude/**` ブランチへ push すると、GitHub Actions(`.github/workflows/merge-to-main.yml`)が**自動で `main` にマージ**する。
-- `main` への push をトリガーに `.github/workflows/deploy.yml` が走り、**Vercel に本番デプロイ**される。
+- `main` への push をトリガーに `.github/workflows/deploy.yml` が走り、本番デプロイされる。
 - 通常の修正作業では、`claude/**` への push までは確認なしで自動的に行ってよい(その後の main へのマージは Actions が処理する)。
 - ただし、以下の場合は必ず実行前にユーザーに確認を取る:
   - 強制プッシュ(force push)を行う場合
   - ブランチを削除する場合
   - 既存ファイル全体を大幅に書き換える場合
-  - デプロイ設定(`deploy.yml` / `merge-to-main.yml` / Vercel 設定 / 環境変数)を変更する場合
-  - データベース構造(Supabase スキーマ)やデータの変更
+  - デプロイ設定(`deploy.yml` / `merge-to-main.yml` / Cloudflare 設定 / 環境変数)を変更する場合
+  - データベース構造(Supabase スキーマ・RLS ポリシー)やデータの変更
 - コミットメッセージは日本語で簡潔に書く。
 
 ### 自動マージワークフローの補足
@@ -259,6 +164,7 @@ curl -X POST /api/ocr \
 | 呼び出し箇所を最小に | 既存コードへの接続は「呼び出しを追加するだけ」に留める |
 | 段階的に実装 | 大きな機能は小さなステップに分けて 1 つずつ実装・確認する |
 | 独立して動作させる | 新機能が壊れても既存機能に影響しない設計を選ぶ |
+| 設計方針との整合 | 上部「設計方針(最重要・絶対遵守)」に反する変更はしない |
 
 ## 7. プッシュ前チェックリスト
 
@@ -269,8 +175,8 @@ curl -X POST /api/ocr \
 - [ ] 修正スコープは要求された箇所だけに限定されているか
 - [ ] 大きな変更の場合、ユーザーのプラン承認を得ているか
 - [ ] データの削除・スキーマ変更を伴う場合、ユーザーに確認したか
-- [ ] 関連する .md ファイルの更新が必要な場合、更新したか
-- [ ] `npm run build` が通るか(TypeScript エラー・ビルドエラーがないか)
+- [ ] 関連する .md ファイル(DESIGN.md / DATA.md / DEPLOY.md / CODING.md 等)の更新が必要な場合、更新したか
+- [ ] ビルド・型チェックが通るか(該当するスクリプトがある場合)
 
 ## 8. ファイル分割の自動判断ルール
 
@@ -281,10 +187,10 @@ curl -X POST /api/ocr \
 
 | ファイル種別 | 提案する目安 | 即分割を強く推奨する目安 |
 |---|---|---|
-| TypeScript / TSX (React コンポーネント含む) | 400 行 | 800 行 |
-| API Route / Server 処理 | 300 行 | 600 行 |
-| CSS / Tailwind 設定 | 800 行 | 1500 行 |
-| Markdown | 500 行 | 1000 行 |
+| TypeScript / TSX (フロント・Workers) | 400 行 | 800 行 |
+| Workers のルーティング・ハンドラ | 300 行 | 600 行 |
+| CSS | 800 行 | 1500 行 |
+| Markdown(ドキュメント) | 500 行 | 1000 行 |
 
 これはあくまで目安。**機能的なまとまり**を優先する。
 
@@ -293,23 +199,23 @@ curl -X POST /api/ocr \
 - **機能単位で分ける**: 行数で機械的に分けず、関連する関数・コンポーネントをまとめる
 - **共通定数は 1 ファイルに集約**: 各ファイルで重複定義しない
 - **ファイル名は内容を表すものに**: 開いた瞬間に内容が分かる名前
-- **分割後は FUNCTIONS.md に各ファイルの役割を記録**(ファイルが増えてきたら作成)
+- **分割後は FUNCTIONS.md に各ファイルの役割を記録**(関数が増えてきたら作成)
 
 ### CLAUDE.md 自体の分割
 
-CLAUDE.md は **500 行を超えてきたら分割を提案**する。
+このファイルは既に DESIGN.md / DATA.md / DEPLOY.md / CODING.md 等に分割済み。
+新しい関心事が増えたら下表にならって専用ファイルへ切り出す。
 
 | ファイル | 役割 |
 |---|---|
 | CLAUDE.md | 中核ルール・自動読み込み対象 |
-| DEPLOY.md | デプロイ手順・自動化設定の詳細 |
-| CODING.md | コーディング規約の詳細 |
-| DATA.md | データ構造・環境変数の詳細 |
-| DESIGN.md | 設計判断の記録 |
-| BUGS.md | 既知のバグと対処法 |
-| FUNCTIONS.md | 全関数の一覧 |
-
-分割時は、CLAUDE.md に「詳細は ○○.md 参照」と参照リンクを残す。
+| DESIGN.md | 全体設計、テーブル構成、権限モデル、API 設計 |
+| DATA.md | データ構造の詳細、JSONB スキーマ、CREATE TABLE 文 |
+| DEPLOY.md | デプロイ手順、環境構築、Cloudflare / Supabase 設定 |
+| CODING.md | コーディング規約、命名規則、API レスポンス形式 |
+| LATEX_GUIDELINES.md | LaTeX 記法ガイドライン |
+| BUGS.md | 既知のバグと対処法(必要になったら作成) |
+| FUNCTIONS.md | 全関数の一覧(関数が 10 個以上になったら作成) |
 
 ### NEVER(分割関連の禁止事項)
 
@@ -328,20 +234,22 @@ CLAUDE.md は **500 行を超えてきたら分割を提案**する。
 | トリガー | 更新箇所 |
 |---|---|
 | 本番運用が開始された | 冒頭に「🚨 本番運用中(YYYY-MM-DD〜)」の警告を追加し、変更ルールを厳格化 |
-| ファイル構成が変わった | 「ディレクトリ構成」セクションを更新 |
+| ファイル構成が変わった | 「ファイル構成」セクションを更新 |
 | 技術スタックを変更した | 「技術スタック」セクションを更新 |
-| 環境変数を追加した | 「環境変数」セクションを更新 |
-| 重要な制約・注意点が判明した | 「既知の制約・注意点」セクションに追記(なければ作成) |
+| 新しい Phase に入った | 「開発フェーズ」セクションのチェック状況を更新 |
+| 重要な制約・注意点が判明した | 「NEVER」セクションに追記 |
 
 ### 別の md ファイルを新規作成・更新するタイミング
 
 | トリガー | ファイル | 内容 |
 |---|---|---|
-| バグを踏んで修正した | BUGS.md | 「何が起きたか」「原因」「対処法」を記録 |
-| 重要な設計判断をした | DESIGN.md | 「なぜその設計にしたか」の背景込みで記録 |
-| 環境変数・設定値を追加した | DATA.md | `.env.local` / Vercel 環境変数 / Supabase スキーマ等 |
-| 関数・コンポーネントが増えてきた(目安: 10 個以上) | FUNCTIONS.md | 各関数・コンポーネントの役割を一覧化 |
-| デプロイ設定が複雑になった | DEPLOY.md | デプロイ手順・自動化の設定を集約 |
+| 設計判断をした | DESIGN.md | 「なぜその設計にしたか」の背景込みで記録 |
+| データ構造を変更した | DATA.md | JSONB スキーマ・CREATE TABLE・RLS の差分を記録 |
+| デプロイ手順を変更した | DEPLOY.md | Cloudflare / Supabase の設定変更を記録 |
+| コーディング規約を決めた | CODING.md | 命名規則・API レスポンス形式を記録 |
+| LaTeX ルールが増えた | LATEX_GUIDELINES.md | 記法ガイドラインに追記 |
+| バグを踏んで修正した | BUGS.md | 「何が起きたか」「原因」「対処法」を記録(なければ作成) |
+| 関数・コンポーネントが 10 個以上 | FUNCTIONS.md | 各関数・コンポーネントの役割を一覧化(なければ作成) |
 
 ### 育成ルールの大原則
 
@@ -353,11 +261,12 @@ CLAUDE.md は **500 行を超えてきたら分割を提案**する。
 
 | 変更ファイル | 報告文 |
 |---|---|
-| アプリ本体のコード(`.ts` `.tsx` `.css` 等) | 「GitHub にプッシュしました。`claude/**` から main への自動マージ後、Vercel に反映されます(目安 2〜3 分)。」 |
+| アプリ本体のコード(`.ts` `.tsx` `.css` 等) | 「GitHub にプッシュしました。`claude/**` から main への自動マージ後、Cloudflare Pages に反映されます(目安 1〜2 分)。」 |
+| Workers のコード | 「GitHub にプッシュしました。Cloudflare Workers にデプロイされます(目安 30 秒〜1 分)。」 |
 | `.md` ファイルのみ | 「GitHub にプッシュしました。今回はアプリの再デプロイは発生しませんが、変更は自動で main に取り込まれます。」 |
 | `deploy.yml` / `merge-to-main.yml` などの設定変更 | 「設定変更をプッシュしました。次回の push から新しい設定が有効になります。」 |
 
-`AUTO_MERGE_TOKEN` を未設定のうちは「main への自動マージ後、**Vercel への自動デプロイは走らないため、手動で再デプロイトリガーが必要な場合があります**」と注記する。
+`AUTO_MERGE_TOKEN` を未設定のうちは「main への自動マージ後、**Cloudflare への自動デプロイは走らないため、手動で再デプロイトリガーが必要な場合があります**」と注記する。
 
 ## 11. 動作確認の依頼ルール
 
@@ -369,9 +278,9 @@ CLAUDE.md は **500 行を超えてきたら分割を提案**する。
 
 以下の手順で確認してください:
 
-1. [具体的な操作1] (例: ダッシュボードを開いて「新規問題」をクリック)
-2. [具体的な操作2] (例: タイトルと LaTeX を入力して「保存」をクリック)
-3. [想定される結果] (例: 一覧に追加された問題が表示される)
+1. [具体的な操作1] (例: ログインしてダッシュボードを開く)
+2. [具体的な操作2] (例: 「新規問題」をクリックして LaTeX を入力 → 保存)
+3. [想定される結果] (例: 一覧に追加した問題が表示される)
 
 うまくいかない場合は、以下を教えてください:
 - エラーメッセージが表示されたか(あればそのままコピー)
@@ -385,8 +294,8 @@ CLAUDE.md は **500 行を超えてきたら分割を提案**する。
 |---|---|
 | 小さな修正(文言・色・配置) | 1〜2 ステップで簡潔に |
 | 機能追加・ロジック変更 | 3〜5 ステップで具体的に |
-| データ操作を伴う変更 | 確認手順 + データの確認方法も案内 |
-| 印刷プレビュー関連 | ブラウザの「印刷プレビュー」でレイアウトが崩れないかも確認 |
+| データ操作を伴う変更 | 確認手順 + Supabase 上のデータの確認方法も案内 |
+| 印刷プレビュー / PDF 出力関連 | ブラウザの「印刷プレビュー」または出力 PDF でレイアウトが崩れないかも確認 |
 | デプロイ設定の変更 | デプロイ完了の確認方法 + 動作確認 |
 
 ### 確認後の対応
@@ -404,10 +313,10 @@ CLAUDE.md は **500 行を超えてきたら分割を提案**する。
 
 #### HTML / メタ情報
 
-- ルートレイアウト(`app/layout.tsx`)で **`<html lang="ja">`** を必ず指定する。
+- ルートレイアウトで **`<html lang="ja">`** を必ず指定する。
   - これがないと macOS Safari が「英語ページ」と誤認識し、日本語が中国語フォントで表示されることがある(漢字の形が微妙に違う)。
-- HTML の文字コードは **UTF-8(BOM なし)** に統一する。
-- 数式表示には **KaTeX の CSS** を `app/layout.tsx` で読み込む(欠落するとフォントがフォールバックして崩れる)。
+- HTML の文字コードは **UTF-8(BOM なし)** に統一する(`<meta charset="UTF-8">` を必ず指定)。
+- 数式表示には **KaTeX の CSS** を必ず読み込む(欠落するとフォントがフォールバックして崩れる)。
 
 #### フォント指定
 
@@ -424,12 +333,10 @@ CLAUDE.md は **500 行を超えてきたら分割を提案**する。
     sans-serif;
   ```
 
-- Tailwind を使う場合は `tailwind.config.ts` の `theme.fontFamily.sans` でこのスタックを定義する。
-
 #### 機種依存文字・特殊文字
 
 - **㈱・①・㍿・㌍ などの機種依存文字は使わない**(代わりに「(株)」「(1)」「カロリー」と書く)。
-- 数式は LaTeX(KaTeX)で表現する。生のユニコード数学記号(√, ∫, ∑ など)は OS によって表示差が出るため避ける。
+- 数式は LaTeX(KaTeX / MathLive)で表現する。生のユニコード数学記号(√, ∫, ∑ など)は OS によって表示差が出るため避ける。
 
 #### ファイルの保存形式
 
@@ -441,9 +348,9 @@ CLAUDE.md は **500 行を超えてきたら分割を提案**する。
 修正後は、以下の最低 2 つで確認を依頼する:
 
 1. **macOS Safari**(または最新の Chrome on macOS)— 文字化け・フォント崩れがないか
-2. **Windows Chrome**(または Edge)— レイアウト・印刷プレビューが崩れないか
+2. **Windows Chrome**(または Edge)— レイアウト・印刷プレビュー・PDF 出力が崩れないか
 
-印刷プレビュー機能を変更したときは、**A4 縦・横の両方**で印刷プレビュー画面を確認してもらう。
+印刷プレビュー / PDF 出力機能を変更したときは、**A4 縦・横の両方**で確認してもらう。
 
 ### NEVER(文字化け関連の禁止事項)
 
@@ -454,14 +361,14 @@ CLAUDE.md は **500 行を超えてきたら分割を提案**する。
 
 ## 13. 実利用者の視点(利用者からの指摘パターン)
 
-このアプリは**IT に不慣れな先生・利用者も使う**想定。
+このアプリは **S-quire スタッフ(IT に不慣れな利用者を含む)** が使う想定。
 開発者の視点では気づきにくい問題が、実利用者から指摘されることが多い。
 新機能・UI 修正の前に、以下を必ずセルフチェックする。
 
 ### 視認性
 
 - 文字は最低 14px 以上(印刷物のサイズ感に合わせる)
-- 重要なボタン(保存・印刷など)は画面のどこにあるか一目で分かるか
+- 重要なボタン(保存・印刷・PDF 出力など)は画面のどこにあるか一目で分かるか
 - 色だけで情報を伝えていないか(色覚多様性への配慮)
 - 印刷時に薄いグレーが消えていないか
 
@@ -474,7 +381,7 @@ CLAUDE.md は **500 行を超えてきたら分割を提案**する。
 
 ### 分かりやすさ
 
-- 専門用語を避けているか(「コミット」「デプロイ」「キャッシュ」などは利用者には不要)
+- 専門用語を避けているか(「コミット」「デプロイ」「キャッシュ」「JSONB」などは利用者には不要)
 - エラーメッセージは具体的に何をすればいいか書いているか
 - 必須項目と任意項目が見分けられるか
 - 各画面に「これは何をする画面か」が明示されているか
@@ -494,6 +401,7 @@ CLAUDE.md は **500 行を超えてきたら分割を提案**する。
 - 必須項目が未入力でも、入力済み項目は保持されるか
 - 確認画面で内容を見直せるか(特に削除・送信の前)
 - 取り返しのつかない操作(削除など)は二段階確認するか
+- 削除は**論理削除のみ**(設計方針に従う)。完全削除は admin が手動
 
 ### 過去の指摘パターン(実例から育てる)
 
@@ -516,7 +424,9 @@ CLAUDE.md は **500 行を超えてきたら分割を提案**する。
 やってみますか?
 ```
 
-## 15. NEVER(過去のトラブルから学んだ禁止事項)
+## 15. NEVER(運用上の禁止事項)
+
+このセクションは、上部の「NEVER(設計上の禁止事項)」とは別に、**運用面での禁止事項**を記録する。
 
 - 強制プッシュ(force push)はユーザーの確認なしに絶対に行わない
 - ユーザーの確認なしに本番データ(Supabase 上のデータ)を変更しない
@@ -526,7 +436,6 @@ CLAUDE.md は **500 行を超えてきたら分割を提案**する。
 - 大規模なリファクタリング・コードの一括整理は、要求されない限り行わない
 - `main` ブランチに直接コミット・直接 push しない(必ず `claude/**` 経由)
 
-このセクションは**プロジェクト固有の禁止事項が見つかったら追記していく**。
 過去に踏んだ罠を記録しておくことで、同じ失敗を繰り返さない。
 
 ## 16. トラブル時の対応
