@@ -3,7 +3,7 @@ import { createServerSupabase } from "@/lib/supabase/server";
 import type { Problem } from "@/types/domain";
 
 export default async function ProblemsListPage() {
-  const supabase = createServerSupabase();
+  const supabase = await createServerSupabase();
   const { data, error } = await supabase
     .from("problems")
     .select("*")
