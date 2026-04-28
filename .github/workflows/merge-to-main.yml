@@ -1,0 +1,38 @@
+name: Auto-merge claude branches to main
+
+on:
+  push:
+    branches:
+      - "claude/**"
+
+permissions:
+  contents: write
+
+jobs:
+  merge:
+    name: Merge into main
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+          token: ${{ secrets.AUTO_MERGE_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch source branch
+        run: git fetch origin "${GITHUB_REF#refs/heads/}":"${GITHUB_REF#refs/heads/}"
+
+      - name: Merge source branch into main
+        run: |
+          BRANCH="${GITHUB_REF#refs/heads/}"
+          git merge --no-ff "$BRANCH" -m "Merge branch '$BRANCH' into main (auto)"
+
+      - name: Push to main
+        run: git push origin main
