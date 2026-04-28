@@ -21,14 +21,23 @@
 
 ## 技術スタック
 
-- **フロント**: Cloudflare Pages
-- **バックエンド**: Cloudflare Workers
+- **フレームワーク**: Next.js (App Router) — フロント + API Route Handlers を 1 プロジェクトで管理
+- **API ロジック**: Next.js Route Handlers (`app/api/*`、Edge Runtime) — Cloudflare Pages Functions として Workers 上で実行
+- **ホスティング**: Cloudflare Pages(`@cloudflare/next-on-pages` でデプロイ) — 無料・商用利用 OK・帯域無制限
 - **DB**: Supabase (PostgreSQL + RLS)
-- **認証**: Supabase Auth + Google OAuth
-- **ストレージ**: Supabase Storage
+- **認証**: Supabase Auth + Google OAuth + `allowed_emails` 許可リスト方式
+- **ストレージ**: Supabase Storage(問題画像・OCR 入力等)
 - **数式表示**: KaTeX
 - **数式入力**: MathLive
 - **図形・グラフ**: GeoGebra
+
+### 技術選定の背景(教訓)
+
+- 過去に S-quire で「初心者向け」として GAS を選んだ結果、テスト段階で限界に達して**本番直前に Cloudflare へ大移行**となった。今回はその教訓から**最初から長期運用に耐える構成**で着手する。
+- **Vercel は採用しない**: Hobby(無料)プランは規約上「商用・業務利用禁止」のため、社内ツールで使い続けると規約違反になる。
+- **Cloudflare Pages を採用**: 無料プランでも商用 OK・帯域/リクエスト無制限。有料プランも $5/月〜と安価で、長期運用しても突然のコスト爆発がない。
+- **Workers を最初から挟む構造**(Route Handlers 経由): 後から「DB 直接 → Workers 経由」への変更は痛みが大きいため、最初から DB に直接触らない構造で書く。
+- **将来 Vercel に移したくなった場合**: Next.js コードはそのまま動くので移行は容易(Cloudflare → Vercel 方向は楽、逆は調整が必要)。
 
 ## 開発フェーズ
 
