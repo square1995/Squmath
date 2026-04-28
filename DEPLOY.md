@@ -15,12 +15,14 @@
 
 [本番デプロイ]
   GitHub (main ブランチ)
-    ↓ push で自動トリガー
-  GitHub Actions (deploy.yml)
+    ↓ Cloudflare Pages の GitHub 連携で自動トリガー
+  Cloudflare Pages のビルダー
     ↓ @cloudflare/next-on-pages でビルド
   Cloudflare Pages にデプロイ
     ↓
   本番ドメイン(例: https://squmath.pages.dev)
+
+  ※ GitHub Actions の deploy.yml は TypeScript 型チェック専用。本番デプロイ自体には関与しない。
 ```
 
 ---
@@ -208,7 +210,7 @@ GEMINI_API_KEY=AIzaSy...
 ### 6.1 すでに導入済み
 
 - `.github/workflows/merge-to-main.yml` が `claude/**` への push をトリガーに自動で main にマージする
-- `.github/workflows/deploy.yml` は Cloudflare Pages に直接デプロイするものではなく、(必要に応じて)テスト・型チェックを行う用途に使う想定
+- `.github/workflows/deploy.yml` は **TypeScript の型チェック専用**(`npm run typecheck` を実行する)。本番デプロイは Cloudflare Pages の GitHub 連携で別途実行される。
 
 ### 6.2 (任意)`AUTO_MERGE_TOKEN` の設定
 
