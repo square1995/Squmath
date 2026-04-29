@@ -135,7 +135,55 @@ export type Problem = {
 
 - **`any` は使わない**(`unknown` でとりあえず受けて型ガードする)。
 - **オプショナル(`?`)** は積極的に使う(JSONB のキーは欠けることがある前提)。
-- **DB の型生成**(将来):Supabase CLI で `npx supabase gen types typescript --project-id xxxx > types/supabase.ts` を生成して `types/domain.ts` の素材にする(Phase 1 後半で導入可)。
+
+### 3.4 Supabase の型自動生成(2026-04-29 導入)
+
+DB スキーマと TypeScript 型のズレを防ぐため、`types/supabase.ts` は **GitHub Actions が Supabase 本体から自動生成**する仕組みを導入済み。
+
+- **ワークフロー**: `.github/workflows/sync-supabase-types.yml`
+- **トリガー**:
+  - 毎日 00:00 UTC(日本時間 09:00)に自動実行
+  - GitHub の Actions タブから手動実行(スキーマ変更直後はこちらで即時反映)
+- **動作**:
+  1. Supabase CLI で `types/supabase.ts` を再生成
+  2. 差分があれば `claude/sync-types-<timestamp>` ブランチに自動コミット
+  3. `merge-to-main.yml` が main へ自動マージ
+  4. Cloudflare Workers Builds が再ビルドしてアプリに反映
+- **必要な GitHub Secrets**: `SUPABASE_PROJECT_REF` / `SUPABASE_ACCESS_TOKEN`(設定済み)
+
+#### `types/domain.ts` との関係
+
+- `types/supabase.ts`: **自動生成・手で触らない**。テーブル全カラムの完全な型(生成カラム含む)
+- `types/domain.ts`: **手書き**。`supabase.ts` をベースに、JSONB の `content` / `meta` の構造を絞り込んだ実用型を定義する場所
+
+```ts
+// types/domain.ts(将来形)
+import type { Database } from "./supabase";
+
+// supabase.ts の自動生成型をベースに、JSONB 部分だけ絞る
+export type Problem = Omit<
+  Database["public"]["Tables"]["problems"]["Row"],
+  "content" | "meta"
+> & {
+  content: ProblemContent;
+  meta: ProblemMeta;
+};
+```
+
+#### ローカルで手動生成したいとき
+
+```bash
+export SUPABASE_PROJECT_REF=xxxxx     # Supabase の Reference ID
+export SUPABASE_ACCESS_TOKEN=sbp_...  # ローカル用のアクセストークン
+npm run gen:types
+```
+
+`SUPABASE_ACCESS_TOKEN` は `.env.local` には書かない(他の env と衝突するため)。シェル環境変数として一時的に設定する。
+
+#### NEVER
+
+- ❌ `types/supabase.ts` を手で編集する(自動生成で上書きされる)
+- ❌ `types/domain.ts` で DB 直接の型を再定義する(必ず `supabase.ts` を import して派生させる)
 
 ---
 
