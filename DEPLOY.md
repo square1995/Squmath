@@ -179,8 +179,9 @@ GEMINI_API_KEY=AIzaSy...
 4. プロダクションブランチ: `main`
 5. ビルド設定:
    - **Framework preset**: `Next.js`(自動検出される)
-   - **Build command**: `npm run build && npx opennextjs-cloudflare build`
-   - **Deploy command**: `npx wrangler deploy`(または Cloudflare 側がデフォルトで使う `npx opennextjs-cloudflare deploy`)
+   - **Build command**: `npm ci && npm run build && npx opennextjs-cloudflare build`
+     - 先頭の `npm ci` は明示で **npm を強制**するため(`package.json` の `packageManager` フィールドと合わせて二重に固定)。これがないと Cloudflare 環境が bun を勝手に使うことがある
+   - **Deploy command**: `npx wrangler deploy`
    - **Root directory**: `/`(空欄)
 6. 環境変数(Production):
    - `NEXT_PUBLIC_SUPABASE_URL`
