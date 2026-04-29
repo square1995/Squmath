@@ -35,6 +35,12 @@ yarn-error.log*
 .wrangler/
 cloudflare-env.d.ts
 
+# 他のパッケージマネージャ(本プロジェクトは npm 統一)
+bun.lock
+bun.lockb
+yarn.lock
+pnpm-lock.yaml
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
