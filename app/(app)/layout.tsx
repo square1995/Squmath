@@ -3,8 +3,6 @@ import { redirect } from "next/navigation";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { SignOutButton } from "@/components/ui/SignOutButton";
 
-export const runtime = "edge";
-
 // 認証必須ページのレイアウト。
 // Server Component で auth チェックを行い、未ログインなら /login へリダイレクト。
 export default async function AppLayout({

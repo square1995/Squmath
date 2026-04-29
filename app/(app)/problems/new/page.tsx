@@ -4,8 +4,6 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
-export const runtime = "edge";
-
 export default function NewProblemPage() {
   const router = useRouter();
   const [title, setTitle] = useState("");

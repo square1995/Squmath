@@ -3,8 +3,6 @@ import { requireUser } from "@/lib/auth/guard";
 import { ok, err } from "@/lib/api/response";
 import type { CreateProblemBody } from "@/types/api";
 
-export const runtime = "edge";
-
 // GET /api/problems  自分の問題 + master を一覧で返す(deleted_at IS NULL のみ)
 export async function GET() {
   const auth = await requireUser();
