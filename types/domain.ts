@@ -1,5 +1,10 @@
-// アプリのドメイン型。DB のテーブル構造と対応する。
-// JSONB のキーは欠落することがある前提で、すべてオプショナルにしておく。
+// アプリのドメイン型。
+// DB のスキーマ型は `types/supabase.ts` が GitHub Actions で自動生成する(編集禁止)。
+// ここでは自動生成型をベースに、JSONB(content / meta)の構造を絞り込んだ実用型を定義する。
+
+import type { Database } from "./supabase";
+
+// ----- JSONB スキーマ(JSONB のキーは欠落することがある前提でオプショナル) -----
 
 export type ProblemContent = {
   kind?: "math_problem";
@@ -21,31 +26,20 @@ export type ProblemMeta = {
   source?: string;
 };
 
-export type Problem = {
-  id: string;
-  owner_id: string | null;
-  title: string;
+// ----- 自動生成型からの派生 -----
+
+type ProblemRow = Database["public"]["Tables"]["problems"]["Row"];
+type UserRow = Database["public"]["Tables"]["users"]["Row"];
+
+// problems テーブルの行(content/meta だけ JSONB 型を絞り込む)
+export type Problem = Omit<ProblemRow, "content" | "meta"> & {
   content: ProblemContent;
   meta: ProblemMeta;
-  created_at: string;
-  updated_at: string;
-  deleted_at: string | null;
-  // 生成カラム(SELECT で取れる、書き込みは不可)
-  subject: string | null;
-  school_level: string | null;
-  grade: number | null;
-  unit: string | null;
-  difficulty: number | null;
 };
 
 export type AppUserRole = "staff" | "admin";
 
-export type AppUser = {
-  id: string;
-  email: string;
-  display_name: string | null;
+// users テーブルの行(role のリテラル型化)
+export type AppUser = Omit<UserRow, "role"> & {
   role: AppUserRole;
-  created_at: string;
-  updated_at: string;
-  deleted_at: string | null;
 };
