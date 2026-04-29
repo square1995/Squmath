@@ -2,8 +2,6 @@ import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { createServiceSupabase } from "@/lib/supabase/service";
 
-export const runtime = "edge";
-
 // Google OAuth のコールバックを受けて、
 //  1. code をセッションに交換
 //  2. allowed_emails を確認

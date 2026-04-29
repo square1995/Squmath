@@ -3,8 +3,6 @@ import { requireUser } from "@/lib/auth/guard";
 import { ok, err } from "@/lib/api/response";
 import type { UpdateProblemBody } from "@/types/api";
 
-export const runtime = "edge";
-
 type Ctx = { params: Promise<{ id: string }> };
 
 // GET /api/problems/[id]  1 件取得

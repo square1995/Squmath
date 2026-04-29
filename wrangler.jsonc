@@ -1,0 +1,25 @@
+/**
+ * Cloudflare Workers の設定ファイル
+ * @opennextjs/cloudflare がここを読んで Worker をデプロイする。
+ *
+ * 公式ドキュメント: https://opennext.js.org/cloudflare/get-started
+ */
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "squmath",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2025-04-01",
+  "compatibility_flags": [
+    // Node.js 互換 API を有効化(@opennextjs/cloudflare の必須要件)
+    "nodejs_compat",
+    // セキュリティ強化: Worker からの fetch をパブリックなインターネット宛に限定
+    "global_fetch_strictly_public"
+  ],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "observability": {
+    "enabled": true
+  }
+}

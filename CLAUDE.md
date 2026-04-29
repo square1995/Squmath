@@ -22,8 +22,8 @@
 ## 技術スタック
 
 - **フレームワーク**: Next.js (App Router) — フロント + API Route Handlers を 1 プロジェクトで管理
-- **API ロジック**: Next.js Route Handlers (`app/api/*`、Edge Runtime) — Cloudflare Pages Functions として Workers 上で実行
-- **ホスティング**: Cloudflare Pages(`@cloudflare/next-on-pages` でデプロイ) — 無料・商用利用 OK・帯域無制限
+- **API ロジック**: Next.js Route Handlers (`app/api/*`) — Cloudflare Workers 上で Node.js ランタイムで実行
+- **ホスティング**: Cloudflare Workers + Static Assets(`@opennextjs/cloudflare` でデプロイ) — 無料・商用利用 OK
 - **DB**: Supabase (PostgreSQL + RLS)
 - **認証**: Supabase Auth + Google OAuth + `allowed_emails` 許可リスト方式
 - **ストレージ**: Supabase Storage(問題画像・OCR 入力等)
@@ -35,7 +35,8 @@
 
 - 過去に S-quire で「初心者向け」として GAS を選んだ結果、テスト段階で限界に達して**本番直前に Cloudflare へ大移行**となった。今回はその教訓から**最初から長期運用に耐える構成**で着手する。
 - **Vercel は採用しない**: Hobby(無料)プランは規約上「商用・業務利用禁止」のため、社内ツールで使い続けると規約違反になる。
-- **Cloudflare Pages を採用**: 無料プランでも商用 OK・帯域/リクエスト無制限。有料プランも $5/月〜と安価で、長期運用しても突然のコスト爆発がない。
+- **Cloudflare Workers を採用**: 無料プランでも商用 OK・帯域/リクエスト上限が広い。有料プランも $5/月〜と安価で、長期運用しても突然のコスト爆発がない。
+- **`@opennextjs/cloudflare` を採用**(2026-04-29 移行): 旧 `@cloudflare/next-on-pages` は deprecated になり、Next.js のバージョンに peer 依存制約があったため、公式後継の OpenNext アダプターへ移行。これにより Node.js ランタイムが使え、Next.js も最新を追える。
 - **Workers を最初から挟む構造**(Route Handlers 経由): 後から「DB 直接 → Workers 経由」への変更は痛みが大きいため、最初から DB に直接触らない構造で書く。
 - **将来 Vercel に移したくなった場合**: Next.js コードはそのまま動くので移行は容易(Cloudflare → Vercel 方向は楽、逆は調整が必要)。
 
@@ -82,13 +83,16 @@
 squmath/
 ├── CLAUDE.md                       # このファイル（中核ルール）
 ├── DESIGN.md / DATA.md / ...       # モジュール化されたドキュメント
+├── wrangler.jsonc                  # Cloudflare Workers の設定(@opennextjs/cloudflare が読む)
+├── open-next.config.ts             # OpenNext のアダプター設定
+├── next.config.mjs                 # Next.js 設定(initOpenNextCloudflareForDev を呼ぶ)
 ├── .env.local.example
 └── .github/workflows/
-    ├── deploy.yml                  # main / claude/** への push で TypeScript 型チェック(本番デプロイは Cloudflare Pages の GitHub 連携で別途実行)
+    ├── deploy.yml                  # main / claude/** への push で TypeScript 型チェック(本番デプロイは Cloudflare Workers の GitHub 連携で別途実行)
     └── merge-to-main.yml           # claude/** ブランチを main へ自動マージ
 ```
 
-ソースコード(`app/`, `workers/`, `lib/` 等)は Phase 1 着手時に追加していきます。
+ソースコード(`app/`, `lib/` 等)は Phase 1 着手時に追加していきます。
 
 ---
 
@@ -116,7 +120,7 @@ squmath/
 
 - **開発は必ず `claude/<作業内容>-<ID>` ブランチで行う**。`main` への直接コミット・直接 push は禁止。
 - `claude/**` ブランチへ push すると、GitHub Actions(`.github/workflows/merge-to-main.yml`)が**自動で `main` にマージ**する。
-- `main` への push をトリガーに **Cloudflare Pages の GitHub 連携**が本番デプロイを実行する(`.github/workflows/deploy.yml` は型チェック用)。
+- `main` への push をトリガーに **Cloudflare Workers の GitHub 連携(Workers Builds)**が本番デプロイを実行する(`.github/workflows/deploy.yml` は型チェック用)。
 - 通常の修正作業では、`claude/**` への push までは確認なしで自動的に行ってよい(その後の main へのマージは Actions が処理する)。
 - ただし、以下の場合は必ず実行前にユーザーに確認を取る:
   - 強制プッシュ(force push)を行う場合
@@ -154,8 +158,8 @@ git merge origin/main --no-edit
 
 ### 自動マージワークフローの補足
 
-- 既定の `GITHUB_TOKEN` で `main` に push するため、**そのままでは GitHub の他の Action / 外部連携(Cloudflare Pages の自動デプロイ含む)が再トリガーされない**仕様(GitHub の仕様で、自動 push は別ワークフローや一部 Webhook を発火しない)。
-- 本番デプロイも完全自動にしたい場合は、Personal Access Token を `AUTO_MERGE_TOKEN` という名前で Repository secrets に登録する。`merge-to-main.yml` はそれを優先的に使い、ユーザー扱いの push となるため Cloudflare Pages も自動でビルドされる。
+- 既定の `GITHUB_TOKEN` で `main` に push するため、**そのままでは GitHub の他の Action / 外部連携(Cloudflare Workers の自動デプロイ含む)が再トリガーされない**仕様(GitHub の仕様で、自動 push は別ワークフローや一部 Webhook を発火しない)。
+- 本番デプロイも完全自動にしたい場合は、Personal Access Token を `AUTO_MERGE_TOKEN` という名前で Repository secrets に登録する。`merge-to-main.yml` はそれを優先的に使い、ユーザー扱いの push となるため Cloudflare Workers も自動でビルドされる。
 - 設定方法が分からない場合は Claude に「AUTO_MERGE_TOKEN の作り方を教えて」と聞いてください。
 
 ## 3. 確認が必要なケース
@@ -296,8 +300,8 @@ git merge origin/main --no-edit
 
 | 変更ファイル | 報告文 |
 |---|---|
-| アプリ本体のコード(`.ts` `.tsx` `.css` 等) | 「GitHub にプッシュしました。`claude/**` から main への自動マージ後、Cloudflare Pages に反映されます(目安 1〜2 分。`AUTO_MERGE_TOKEN` 未設定の場合はダッシュボードから手動再デプロイが必要)。」 |
-| Workers のコード(Route Handler 等) | 「GitHub にプッシュしました。Cloudflare Pages の関数として再デプロイされます(目安 1〜2 分)。」 |
+| アプリ本体のコード(`.ts` `.tsx` `.css` 等) | 「GitHub にプッシュしました。`claude/**` から main への自動マージ後、Cloudflare Workers に反映されます(目安 1〜2 分。`AUTO_MERGE_TOKEN` 未設定の場合はダッシュボードから手動再デプロイが必要)。」 |
+| Workers のコード(Route Handler 等) | 「GitHub にプッシュしました。Cloudflare Workers として再デプロイされます(目安 1〜2 分)。」 |
 | `.md` ファイルのみ | 「GitHub にプッシュしました。今回はアプリの再デプロイは発生しませんが、変更は自動で main に取り込まれます。」 |
 | `deploy.yml` / `merge-to-main.yml` などの設定変更 | 「設定変更をプッシュしました。次回の push から新しい設定が有効になります。」 |
 

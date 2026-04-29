@@ -1,7 +1,9 @@
 # DEPLOY.md — デプロイ・環境構築手順
 
-このドキュメントは、Squmath をローカルで動かすための初期セットアップと、Cloudflare Pages へのデプロイ手順をまとめたものです。
+このドキュメントは、Squmath をローカルで動かすための初期セットアップと、Cloudflare Workers へのデプロイ手順をまとめたものです。
 **プログラミング初心者向け**に書いているので、コマンドはそのままコピペすれば動きます。
+
+> 📝 **2026-04-29 更新**: Cloudflare Pages + `@cloudflare/next-on-pages` から、Cloudflare Workers + `@opennextjs/cloudflare`(OpenNext アダプター)へ移行しました。旧アダプターは deprecated となり、Next.js のバージョン制約による脆弱性(CVE-2025-66478 など)を受けやすかったため。
 
 ---
 
@@ -9,18 +11,18 @@
 
 ```
 [ローカル開発]
-  Next.js (App Router) ← Route Handlers (Edge Runtime)
+  Next.js (App Router) ← Route Handlers (Node.js ランタイム)
     ↓
   Supabase (Auth + DB + Storage) ← ローカルからは直接接続
 
 [本番デプロイ]
   GitHub (main ブランチ)
-    ↓ Cloudflare Pages の GitHub 連携で自動トリガー
-  Cloudflare Pages のビルダー
-    ↓ @cloudflare/next-on-pages でビルド
-  Cloudflare Pages にデプロイ
+    ↓ Cloudflare Workers Builds の GitHub 連携で自動トリガー
+  Cloudflare 側ビルダー
+    ↓ @opennextjs/cloudflare でビルド(.open-next/worker.js を生成)
+  Cloudflare Workers + Static Assets にデプロイ
     ↓
-  本番ドメイン(例: https://squmath.pages.dev)
+  本番ドメイン(例: https://squmath.<account>.workers.dev もしくはカスタムドメイン)
 
   ※ GitHub Actions の deploy.yml は TypeScript 型チェック専用。本番デプロイ自体には関与しない。
 ```
@@ -34,7 +36,7 @@
 | サービス | 用途 | URL |
 |---|---|---|
 | GitHub | ソース管理 | https://github.com |
-| Cloudflare | ホスティング(Pages) | https://dash.cloudflare.com |
+| Cloudflare | ホスティング(Workers) | https://dash.cloudflare.com |
 | Supabase | DB + 認証 + ストレージ | https://supabase.com |
 | Google Cloud Console | Google OAuth クライアント発行 | https://console.cloud.google.com |
 | Google AI Studio | Gemini API キー(OCR 用) | https://aistudio.google.com |
@@ -161,47 +163,48 @@ GEMINI_API_KEY=AIzaSy...
 
 ---
 
-## 5. Cloudflare Pages にデプロイ
+## 5. Cloudflare Workers にデプロイ
 
-### 5.1 Cloudflare アカウントと API トークンの準備
+### 5.1 Cloudflare アカウントの準備
 
 1. https://dash.cloudflare.com にログイン
-2. 右上のアカウントアイコン → **`My Profile → API Tokens`**
-3. **`Create Token`** をクリック
-4. テンプレート: **`Edit Cloudflare Workers`** を選択(または Custom token で `Account: Cloudflare Pages: Edit` を付与)
-5. 発行されたトークンをメモ → GitHub リポジトリの secrets に **`CLOUDFLARE_API_TOKEN`** として登録
-6. Cloudflare ダッシュボード右サイドバーの **Account ID** をメモ → GitHub secrets に **`CLOUDFLARE_ACCOUNT_ID`** として登録
+2. 右上のアカウントアイコン → **`My Profile → API Tokens`**(必要なら API トークンを発行 — Workers Builds の GitHub 連携を使うなら通常は不要)
+3. Cloudflare ダッシュボード右サイドバーの **Account ID** をメモしておく
 
-### 5.2 Cloudflare Pages プロジェクトの作成
+### 5.2 Cloudflare Workers プロジェクトの作成(Workers Builds 経由)
 
-1. Cloudflare ダッシュボード左メニュー **`Workers & Pages → Create application → Pages → Connect to Git`**
-2. GitHub の `square1995/Squmath` を選択
-3. プロジェクト名: `squmath`
+1. Cloudflare ダッシュボード左メニュー **`Workers & Pages → Create → Workers → Import a repository`**(または **`Connect to Git`**)
+2. GitHub の `square1995/Squmath` を選択して権限を許可
+3. プロジェクト名: `squmath`(`wrangler.jsonc` の `name` と一致させる)
 4. プロダクションブランチ: `main`
 5. ビルド設定:
-   - **Framework preset**: `Next.js`
-   - **Build command**: `npx @cloudflare/next-on-pages@latest`
-   - **Build output directory**: `.vercel/output/static`
+   - **Framework preset**: `Next.js`(自動検出される)
+   - **Build command**: `npm run build && npx opennextjs-cloudflare build`
+   - **Deploy command**: `npx wrangler deploy`(または Cloudflare 側がデフォルトで使う `npx opennextjs-cloudflare deploy`)
+   - **Root directory**: `/`(空欄)
 6. 環境変数(Production):
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   - `SUPABASE_SERVICE_ROLE_KEY`
-   - `GEMINI_API_KEY`
+   - `SUPABASE_SERVICE_ROLE_KEY`(Secret として登録)
+   - `GEMINI_API_KEY`(Secret として登録)
    - `NODE_VERSION` = `20`
 7. **`Save and Deploy`**
 
+> 💡 ビルド/デプロイコマンドの詳細はプロジェクトの `package.json` の `deploy` スクリプトを参照。
+> Cloudflare Workers Builds はリポジトリ直下の `wrangler.jsonc` を自動で読み、`compatibility_flags` の `nodejs_compat` を有効化してくれる。
+
 ### 5.3 デプロイの確認
 
-- 初回ビルドが完了すると `https://squmath.pages.dev` で本番が見られる
-- `main` ブランチに push されるたびに、Cloudflare Pages が自動で再デプロイする
+- 初回ビルドが完了すると `https://squmath.<account>.workers.dev` で本番が見られる(URL は Workers のプロジェクトページに表示される)
+- `main` ブランチに push されるたびに、Cloudflare Workers Builds が自動で再デプロイする
 
 ### 5.4 (任意)カスタムドメインの設定
 
 独自ドメインを使いたい場合:
 
-1. Cloudflare Pages のプロジェクトページ **`Custom domains → Set up a custom domain`**
+1. Cloudflare Workers のプロジェクトページ **`Settings → Domains & Routes → Add → Custom Domain`**
 2. ドメイン名を入力(例: `squmath.example.com`)
-3. DNS の指示に従って CNAME を設定
+3. Cloudflare 上で DNS を管理しているドメインなら、Cloudflare が自動で CNAME を設定する
 
 ---
 
@@ -210,11 +213,11 @@ GEMINI_API_KEY=AIzaSy...
 ### 6.1 すでに導入済み
 
 - `.github/workflows/merge-to-main.yml` が `claude/**` への push をトリガーに自動で main にマージする
-- `.github/workflows/deploy.yml` は **TypeScript の型チェック専用**(`npm run typecheck` を実行する)。本番デプロイは Cloudflare Pages の GitHub 連携で別途実行される。
+- `.github/workflows/deploy.yml` は **TypeScript の型チェック専用**(`npm run typecheck` を実行する)。本番デプロイは Cloudflare Workers Builds の GitHub 連携で別途実行される。
 
 ### 6.2 (任意)`AUTO_MERGE_TOKEN` の設定
 
-自動マージ後に Cloudflare Pages のデプロイも完全自動化したい場合は、Personal Access Token を `AUTO_MERGE_TOKEN` として登録:
+自動マージ後に Cloudflare Workers のデプロイも完全自動化したい場合は、Personal Access Token を `AUTO_MERGE_TOKEN` として登録:
 
 1. GitHub の Settings → Developer settings → Personal access tokens → Tokens (classic)
 2. **`Generate new token (classic)`**
@@ -222,7 +225,7 @@ GEMINI_API_KEY=AIzaSy...
 4. 発行されたトークンをコピー
 5. リポジトリの **Settings → Secrets and variables → Actions** で **`AUTO_MERGE_TOKEN`** として登録
 
-これを設定すると、自動マージ後の `main` への push が「人間が push した」と見なされ、Cloudflare Pages の自動デプロイが走るようになる。
+これを設定すると、自動マージ後の `main` への push が「人間が push した」と見なされ、Cloudflare Workers Builds の自動デプロイが走るようになる。
 
 ---
 
@@ -239,11 +242,12 @@ GEMINI_API_KEY=AIzaSy...
 - Supabase Auth の Provider 設定で Google が有効になっているか確認
 - Google OAuth の Authorized redirect URI が `https://xxxxx.supabase.co/auth/v1/callback` になっているか確認
 
-### Cloudflare Pages のビルドが失敗する
+### Cloudflare Workers のビルドが失敗する
 
-- ビルドコマンドが `npx @cloudflare/next-on-pages@latest` になっているか確認
-- 環境変数がすべて設定されているか確認
-- Edge Runtime 非対応のライブラリを使っていないか確認(Node.js 専用パッケージは使えない)
+- ビルドコマンドが `npm run build && npx opennextjs-cloudflare build` になっているか確認
+- 環境変数(Production)がすべて設定されているか確認(Secret 種別と通常変数の使い分けに注意)
+- `wrangler.jsonc` の `compatibility_flags` に `nodejs_compat` が入っているか確認
+- ローカルで `npm run preview` を実行して同じビルドエラーが出るか確認すると原因切り分けが早い
 
 ### Supabase に接続できない
 
