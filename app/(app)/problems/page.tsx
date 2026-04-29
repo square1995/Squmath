@@ -2,6 +2,8 @@ import Link from "next/link";
 import { createServerSupabase } from "@/lib/supabase/server";
 import type { Problem } from "@/types/domain";
 
+export const runtime = "edge";
+
 export default async function ProblemsListPage() {
   const supabase = await createServerSupabase();
   const { data, error } = await supabase

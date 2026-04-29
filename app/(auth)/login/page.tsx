@@ -4,6 +4,8 @@ import { useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { createBrowserSupabase } from "@/lib/supabase/client";
 
+export const runtime = "edge";
+
 function LoginInner() {
   const searchParams = useSearchParams();
   const errorCode = searchParams.get("error");

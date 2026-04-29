@@ -3,6 +3,8 @@ import { createServerSupabase } from "@/lib/supabase/server";
 import type { Problem } from "@/types/domain";
 import { ProblemEditor } from "@/components/problems/ProblemEditor";
 
+export const runtime = "edge";
+
 export default async function ProblemEditPage({
   params,
 }: {
