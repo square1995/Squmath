@@ -386,6 +386,55 @@ try {
 - ❌ NG: 「Internal Server Error」「Unauthorized」「500」
 - ✅ OK: 「保存に失敗しました。少し時間をおいてもう一度お試しください」「ログインが必要です」
 
+### 7.4 グローバルエラーページ(2026-04-30 導入)
+
+予期せぬ例外を Next.js のデフォルト「Application error」画面で見せると、利用者にとって何の手がかりにもならないので、**専用のエラーページ**を用意している。
+
+| ファイル | 役割 |
+|---|---|
+| `app/error.tsx` | アプリ内で発生した一般的な例外(Server Component / Route Handler 由来含む) |
+| `app/global-error.tsx` | RootLayout 自体が壊れた時の最終フォールバック(`<html>` `<body>` を自前で書く必要あり) |
+| `app/not-found.tsx` | 404 の優しい画面 |
+
+#### 表示すべき要素
+
+- 何が起きたかの平易な説明(技術用語禁止)
+- 利用者が次に取れるアクション(「再読み込み」「ダッシュボードへ」)
+- **エラー ID(Next.js が付ける `digest`)** を表示 → 管理者問い合わせ時の手がかり
+- 連絡先(管理者: シンジさん)への誘導
+
+#### NEVER
+
+- ❌ エラー画面で技術スタックトレースを見せる(社内とはいえ利用者は混乱する)
+- ❌ エラー画面で「リロードしないでください」のような選択肢のない指示
+- ❌ `error.tsx` 内で副作用(API 呼び出し等)を起こす(無限ループの危険)
+
+### 7.5 ログのコンテキスト規約
+
+`console.error` は必ず**コンテキスト情報を頭に付ける**。Cloudflare Logs(Observability)で grep しやすくするため。
+
+```ts
+// ✅ Good
+console.error("[GET /api/problems] db error", error);
+console.error("[auth/callback] users upsert failed", upsertError);
+
+// ❌ Bad(後で何の処理か分からない)
+console.error(error);
+console.error("failed");
+```
+
+### 7.6 削除・破壊的操作の確認
+
+データの**削除・送信・公開**など取り返しのつかない操作は **二段階確認**を必ず入れる。
+
+```ts
+// 最低限の例
+if (!window.confirm("本当に削除しますか?(取り消しできません)")) return;
+await fetch(`/api/problems/${id}`, { method: "DELETE" });
+```
+
+将来的にはモーダル UI に置き換える(Phase 3 以降の検討事項)。
+
 ---
 
 ## 8. UI 実装の方針
