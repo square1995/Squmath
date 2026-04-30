@@ -1,15 +1,18 @@
 # DATA.md — データ構造
 
-このドキュメントは、Supabase(PostgreSQL)上のテーブル定義、JSONB スキーマ、RLS ポリシー、インデックス、生成カラムなど **データレイヤーの正解** を記録するものです。
+このドキュメントは、Supabase(PostgreSQL)上のテーブル定義、JSONB スキーマ、RLS ポリシー、インデックス、生成カラムなど **データレイヤーの設計意図** を記録するものです。
 コードを書く前に必ずこのファイルを参照する。設計の背景は `DESIGN.md`、デプロイは `DEPLOY.md`。
+
+> 📝 **2026-04-29 更新**: DB スキーマの**実際の適用は `supabase/migrations/` の migration ファイル経由**(GitHub Actions が自動で本番適用)。このファイルは**設計意図と JSONB スキーマの記述**を中心に置き、SQL の正解は `supabase/migrations/` を参照する。運用ルールは [supabase/README.md](./supabase/README.md) と CODING.md §9.5 を参照。
 
 ---
 
 ## 0. このドキュメントの位置づけ
 
-- ここに書かれた CREATE TABLE 文をそのまま Supabase の SQL Editor で実行できる。
-- 変更があったら**必ずこのファイルを先に更新**してから、Supabase に反映する。
+- ここに書かれた設計意図と JSONB スキーマを参考に、新しい migration ファイルを書く。
+- 変更があったら**新しい migration ファイル**を `supabase/migrations/` に追加し、このファイルの記述も合わせて更新する。
 - 既存カラムの**型・意味の変更は禁止**(必ず新規追加で対応 → CLAUDE.md NEVER 参照)。
+- Supabase ダッシュボードの SQL Editor で**直接スキーマを変更してはいけない**(Git と本番が乖離する)。
 
 ---
 

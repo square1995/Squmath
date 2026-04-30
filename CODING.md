@@ -476,6 +476,60 @@ import "./local.css";
 
 ---
 
+## 9.5 Supabase スキーマ変更のワークフロー(2026-04-29 導入)
+
+DB スキーマの変更は **必ず `supabase/migrations/` に migration ファイルを追加して CI 経由で本番適用**する。Supabase ダッシュボードの SQL Editor で直接変更してはいけない(Git 管理下から外れて再現性が失われる)。
+
+### 標準ワークフロー
+
+1. Claude が `supabase/migrations/<タイムスタンプ>_<内容>.sql` を新規作成
+   - タイムスタンプ書式: `YYYYMMDDHHMMSS`(例: `20260501120000_add_tags_table.sql`)
+2. Claude がチャットで SQL の全文をシンジさんに提示
+3. シンジさんが OK を出してから `claude/**` ブランチに push
+4. main マージ後、`apply-migrations.yml` が自動で `supabase db push` を実行
+5. 続けて `sync-supabase-types.yml` がトリガーされ `types/supabase.ts` 更新
+6. 必要なら `types/domain.ts` を修正(Claude が型エラー駆動で対応)
+
+### migration ファイルの書き方
+
+- **冪等性を意識**: `CREATE TABLE IF NOT EXISTS` / `ALTER TABLE ADD COLUMN IF NOT EXISTS` 等、再実行しても壊れない書き方を優先
+- **トランザクションは `supabase db push` が自動で囲む**ので明示の `BEGIN; COMMIT;` は不要
+- **コメントで意図を残す**: ファイル冒頭に「何を・なぜ追加したか」を 1 行コメント
+- **RLS ポリシーも同じ migration 内で定義**(テーブル追加と権限設定は分離しない)
+
+### 緊急の修正
+
+すでに当てた migration に間違いがあった場合:
+
+- ❌ そのファイルを書き換えない(履歴破壊)
+- ✅ 新しい migration ファイル(`<timestamp>_fix_xxx.sql`)で「打ち消し」「修正」を別途追加
+
+### 例
+
+```sql
+-- supabase/migrations/20260501120000_add_tags_table.sql
+-- Phase 2: タグ機能の追加。問題に複数タグを付けられるようにする。
+
+create table if not exists public.tags (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  created_at timestamptz not null default now()
+);
+
+create unique index if not exists tags_name_unique on public.tags (name);
+
+alter table public.tags enable row level security;
+
+create policy "tags_select_authenticated"
+  on public.tags for select
+  to authenticated
+  using (true);
+```
+
+詳細は [supabase/README.md](../supabase/README.md) を参照。
+
+---
+
 ## 10. このドキュメントの更新タイミング
 
 以下の場合は必ずこのファイルを更新する:
