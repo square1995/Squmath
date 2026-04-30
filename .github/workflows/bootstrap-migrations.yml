@@ -5,7 +5,8 @@ name: Bootstrap Supabase Migrations
 #
 # - 初回 1 回だけ手動実行する想定(workflow_dispatch)
 # - すでに migration ファイルがある場合は誤実行を防ぐためアボートする
-# - 取得した baseline は「remote では適用済み」として扱う(supabase migration repair)
+# - `supabase db pull` 自身が remote の migration history に applied として記録するので、
+#   別途 `supabase migration repair` を呼ぶ必要は無い
 
 on:
   workflow_dispatch:
@@ -46,6 +47,34 @@ jobs:
         run: |
           supabase link --project-ref "${{ secrets.SUPABASE_PROJECT_REF }}"
 
+      - name: Revert orphan migration entries from previous failed bootstraps
+        # 以前の bootstrap で db pull は走ったが commit が漏れていたケースに対応。
+        # remote の migration_history に applied 記録だけが残っていると、後段の db push が
+        # 「このバージョンは既に適用済み」と誤認するため、ここで revert で掃除する。
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          set -e
+          # local に存在しない applied migration を抽出して revert する
+          # supabase migration list の出力例:
+          #   Local | Remote      | Time (UTC)
+          #   ------|-------------|---------------------
+          #         | 20260430173216 | 2026-04-30 17:32:16
+          REMOTE_ORPHANS=$(supabase migration list --linked 2>/dev/null \
+            | awk -F'|' 'NR>2 && $1 ~ /^[[:space:]]*$/ && $2 ~ /[0-9]+/ { gsub(/[[:space:]]/, "", $2); print $2 }' \
+            || true)
+          if [ -n "$REMOTE_ORPHANS" ]; then
+            echo "Found orphan migrations on remote:"
+            echo "$REMOTE_ORPHANS"
+            for VERSION in $REMOTE_ORPHANS; do
+              echo "Reverting orphan: $VERSION"
+              supabase migration repair --status reverted "$VERSION" || true
+            done
+          else
+            echo "No orphan migrations on remote."
+          fi
+
       - name: Pull remote schema as baseline migration
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
@@ -53,29 +82,17 @@ jobs:
         run: |
           supabase db pull --schema public
 
-      - name: Mark baseline migration as already applied on remote
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-        run: |
-          # 生成された migration ファイルのタイムスタンプ部分を抽出
-          # (例: 20260429210000_remote_schema.sql → 20260429210000)
-          VERSION=$(ls supabase/migrations/ | grep -v '^\.' | head -1 | sed 's/_.*//')
-          if [ -z "$VERSION" ]; then
-            echo "::error::baseline migration が生成されませんでした。"
-            exit 1
-          fi
-          echo "Marking migration $VERSION as applied on remote..."
-          supabase migration repair --status applied "$VERSION"
-
-      - name: Detect changes
+      - name: Detect changes (untracked files included)
         id: detect
         run: |
-          if git diff --quiet supabase/migrations/; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::No new migration was generated."
-          else
+          # `git diff --quiet` は untracked ファイルを見落とすバグを踏むため、
+          # 実体ファイルを find で確認する。
+          if find supabase/migrations -mindepth 1 -maxdepth 1 -type f ! -name '.gitkeep' | grep -q .; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::baseline migration を検出しました。コミット & push します。"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::supabase db pull は走ったが新しい migration ファイルが見当たりません。"
           fi
 
       - name: Configure git identity
@@ -87,6 +104,7 @@ jobs:
       - name: Commit and push
         if: steps.detect.outputs.changed == 'true'
         run: |
+          set -e
           BRANCH="claude/bootstrap-migrations-$(date -u +%Y%m%d-%H%M%S)"
           git checkout -b "$BRANCH"
           git add supabase/migrations/
