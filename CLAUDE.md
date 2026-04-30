@@ -304,7 +304,7 @@ git merge origin/main --no-edit
 | DEPLOY.md | デプロイ手順、環境構築、Cloudflare / Supabase 設定 |
 | CODING.md | コーディング規約、命名規則、API レスポンス形式 |
 | LATEX_GUIDELINES.md | LaTeX 記法ガイドライン |
-| BUGS.md | 既知のバグと対処法(必要になったら作成) |
+| BUGS.md | 既知のバグと対処法(2026-04-30 OpenNext 移行のバグ群を機に作成・運用中) |
 | FUNCTIONS.md | 全関数の一覧(関数が 10 個以上になったら作成) |
 
 ### NEVER(分割関連の禁止事項)
