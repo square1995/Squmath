@@ -290,7 +290,54 @@ Route Handler は `createServerClient`(`@supabase/ssr`)で Cookie から JWT を
 
 ---
 
-## 8. このドキュメントの更新タイミング
+## 8. PDF 出力アーキテクチャ(Phase 5 / Phase 6 で関係)
+
+### 採用方針: A → C 二段構え
+
+**Phase 5(初回実装)**: 案 A — ブラウザ標準印刷(`window.print()` + `@media print` CSS)
+**Phase 6 着手前後**: 案 C — Cloudflare Browser Rendering API へ移行
+
+### この方針を選んだ理由(2026-04-30 決定)
+
+| 案 | Phase 5 採用? | 理由 |
+|---|---|---|
+| **A**(ブラウザ印刷 + `@media print`) | ✅ Phase 5 で採用 | 無料・即実装可能・KaTeX レンダリング OK・規律守れば C への移行コストが低い |
+| **B**(クライアント側 PDF: html2pdf.js) | ❌ スキップ | rasterize された PDF になるため数式や GeoGebra(Phase 6)に向かない。B → C 移行は A → C より大変なので投資価値低 |
+| **C**(Cloudflare Browser Rendering) | ✅ Phase 6 前後で導入 | Workers Paid プラン($5/月)が必要だが、Chromium による高品質 PDF。GeoGebra/iframe にも対応 |
+| D(別 Lambda Puppeteer) | ❌ 不採用 | Cloudflare 統一方針に反する |
+
+### A → C 移行コストの所在
+
+A→C 移行を**半日で済ませるため**、Phase 5 から以下の規律を守る(詳細は CODING.md §印刷 CSS 規約):
+
+1. 印刷スタイルは **`@media print` CSS のみ**(JS で DOM を弄って印刷見た目を変えない)
+2. 印刷可能な画面は必ず **専用 URL**(例: `/worksheets/[id]/print`)を持つ
+3. 印刷専用 URL では **クライアント遅延 fetch を使わない**(全部 Server Component で初期データ込みでレンダリング)
+4. ヘッダ/フッタ/ページ番号は **CSS の `@page` ルール**で設定
+
+これらに違反すると C 移行が数日コースになる。
+
+### Phase 6 で C へ移行するときに必要な作業(見積もり: 半日)
+
+1. **Cloudflare 課金**: Workers Paid プラン($5/月)有効化
+2. **`wrangler.jsonc`**: Browser Rendering binding を 3 行追加
+3. **新 Route Handler**: `app/api/worksheets/[id]/pdf/route.ts`(約 50 行)
+   - 自身の `/worksheets/[id]/print` URL を Browser Rendering に渡して PDF バイナリを取得・返却
+4. **UI**: 「印刷」ボタンの隣 or 置換で「PDF ダウンロード」ボタン追加
+5. **動作確認**: A4 縦/横、複数ページ、KaTeX、GeoGebra
+
+### コスト想定
+
+| Phase | 月額 |
+|---|---|
+| Phase 5 | $0(Workers Free) |
+| Phase 6 以降 | $5+ /月(Workers Paid + Browser Rendering 含み枠) |
+
+Browser Rendering の含み枠を超える利用(月 10 分以上のブラウザ起動)が見込まれた時点で再評価する。
+
+---
+
+## 9. このドキュメントの更新タイミング
 
 以下の場合は必ずこのファイルを更新する:
 
