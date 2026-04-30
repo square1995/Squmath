@@ -72,6 +72,8 @@
 - 既存カラムの型や意味を変更する（必ず新規追加で対応）
 - 教科を増やす（数学専用、理科その他は対象外）
 - `types/supabase.ts` を手で編集する（GitHub Actions による自動生成専用、編集しても次回の sync で上書きされる）
+- DB スキーマを Supabase ダッシュボードの SQL Editor で**直接変更する**（必ず `supabase/migrations/` に migration ファイルを追加して CI 経由で適用する）
+- 既存の migration ファイルを後から編集する（バージョン履歴が壊れて他環境と乖離する。必ず新しい migration ファイルで「打ち消し / 修正」を行う）
 
 ## 関連リポジトリ
 

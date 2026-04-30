@@ -1,0 +1,95 @@
+name: Bootstrap Supabase Migrations
+
+# 既存の本番スキーマを supabase/migrations/ にベースライン migration として
+# 取り込むためのワークフロー。
+#
+# - 初回 1 回だけ手動実行する想定(workflow_dispatch)
+# - すでに migration ファイルがある場合は誤実行を防ぐためアボートする
+# - 取得した baseline は「remote では適用済み」として扱う(supabase migration repair)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap:
+    name: Pull baseline schema as migration
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.AUTO_MERGE_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Abort if migrations already exist
+        run: |
+          set -e
+          # .gitkeep 以外のファイルが 1 つでもあれば中止
+          if find supabase/migrations -mindepth 1 -maxdepth 1 -type f ! -name '.gitkeep' | grep -q .; then
+            echo "::error::supabase/migrations/ にすでにファイルがあります。bootstrap はスキップします。"
+            exit 1
+          fi
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Link Supabase project
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          supabase link --project-ref "${{ secrets.SUPABASE_PROJECT_REF }}"
+
+      - name: Pull remote schema as baseline migration
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          supabase db pull --schema public
+
+      - name: Mark baseline migration as already applied on remote
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          # 生成された migration ファイルのタイムスタンプ部分を抽出
+          # (例: 20260429210000_remote_schema.sql → 20260429210000)
+          VERSION=$(ls supabase/migrations/ | grep -v '^\.' | head -1 | sed 's/_.*//')
+          if [ -z "$VERSION" ]; then
+            echo "::error::baseline migration が生成されませんでした。"
+            exit 1
+          fi
+          echo "Marking migration $VERSION as applied on remote..."
+          supabase migration repair --status applied "$VERSION"
+
+      - name: Detect changes
+        id: detect
+        run: |
+          if git diff --quiet supabase/migrations/; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No new migration was generated."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Configure git identity
+        if: steps.detect.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Commit and push
+        if: steps.detect.outputs.changed == 'true'
+        run: |
+          BRANCH="claude/bootstrap-migrations-$(date -u +%Y%m%d-%H%M%S)"
+          git checkout -b "$BRANCH"
+          git add supabase/migrations/
+          git commit -m "chore: 既存スキーマをベースライン migration として取り込み"
+          git push origin "$BRANCH"
+          echo "::notice::Pushed baseline migration to $BRANCH. merge-to-main.yml will pick it up."
