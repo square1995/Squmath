@@ -180,11 +180,29 @@ Phase 2 以降で `/worksheets`、`/print/[id]` などが増える。
 
 | メソッド | 用途 | 例 |
 |---|---|---|
-| `GET /api/problems` | 一覧取得(クエリで絞り込み) | `?folder=xxx&q=keyword` |
+| `GET /api/problems` | 一覧取得(クエリで絞り込み) | 下記 |
 | `GET /api/problems/[id]` | 1 件取得 | |
 | `POST /api/problems` | 新規作成 | body: `{ title, content, meta }` |
 | `PUT /api/problems/[id]` | 更新 | body: `{ title, content, meta }` |
 | `DELETE /api/problems/[id]` | **論理削除**(`deleted_at` を立てる) | |
+
+#### `GET /api/problems` のクエリパラメータ(Phase 2)
+
+| キー | 型 | 用途 |
+|---|---|---|
+| `q` | string | タイトルの部分一致(`ILIKE %q%`) |
+| `subject` | string | 教科(現状は `math` のみ) |
+| `school_level` | `junior` / `high` | 校種 |
+| `grade` | 1〜3 | 学年 |
+| `unit` | string | 単元(完全一致) |
+| `difficulty` | 1〜5 | 難易度 |
+| `sort` | enum | `updated_desc`(既定) / `updated_asc` / `created_desc` / `created_asc` / `title_asc` |
+| `limit` | int | 1〜100(既定 50) |
+| `offset` | int | 0〜(既定 0) |
+
+レスポンス: `{ ok: true, data: { items: Problem[], next_offset: number | null, returned: number } }`。`next_offset` が `null` でなければ、その値を `offset` に渡せば次ページが取れる。
+
+`folder` / `tag_id` は **Phase 2 タグ・フォルダ実装時に追加予定**。
 
 ### 5.3 レスポンス形式
 
