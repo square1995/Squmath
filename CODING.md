@@ -579,7 +579,84 @@ create policy "tags_select_authenticated"
 
 ---
 
-## 10. このドキュメントの更新タイミング
+## 10. 印刷 CSS / PDF 出力規約(2026-04-30 導入)
+
+Squmath は数学プリントを **A4 用紙に印刷 / PDF 化**して使う前提のアプリ。**印刷品質**と、Phase 6 での **Cloudflare Browser Rendering(C 案)への移行コスト最小化**のため、以下の規約を厳守する。
+
+### 10.1 印刷スタイルは `@media print` CSS のみで実装する
+
+JS で DOM を弄って印刷見た目を変えてはいけない。
+
+- ✅ `<button class="no-print">` のように **クラスで宣言的に**「印刷で消す」を表す
+- ❌ `useEffect(() => { document.querySelector(...).style.display = "none" }, [])` のような JS 操作
+
+**理由**: Phase 6 で Cloudflare Browser Rendering(C 案)に移行すると、サーバ側で印刷 URL を Chromium が開くだけ。JS の動作タイミングがズレてレイアウトが崩れる。CSS だけで決まっていれば崩れない。
+
+### 10.2 印刷可能な画面は専用 URL を持つ
+
+- ✅ `/worksheets/[id]/print` のような**印刷専用ページ**を必ず用意
+- ❌ 通常画面のモーダルに HTML を描画して `window.print()`
+
+**理由**: C 案では URL を Chromium に渡して PDF を生成する。専用 URL が無いと、PDF 生成側が「どの画面を撮ればよいか」を指定できない。
+
+### 10.3 印刷専用ページは Server Component で初期データ完備
+
+- ✅ Server Component で `await supabase.from(...)` 等を済ませて、HTML 完成形でレスポンス
+- ❌ Client Component で `useEffect(() => fetch(...), [])` で後からデータを取りに行く
+
+**理由**: C 案の Chromium はページを開いて少し待つだけで PDF を撮る。クライアント遅延 fetch のデータが間に合わず、空の PDF が出る。
+
+### 10.4 ヘッダ・フッタ・ページ番号は `@page` CSS ルールで設定
+
+- ✅ `@page { size: A4; margin: 15mm; @bottom-center { content: counter(page); } }` のようなネイティブ CSS
+- ❌ React で「右下にページ番号を絶対配置」する自前実装
+
+**理由**: ブラウザ印刷の `@page` は確実に動く。自前実装は段組や複数ページに弱い。
+
+### 10.5 印刷時に表示を変える要素は CSS の `display:none` で隠す
+
+- ✅ `<aside class="no-print">サイドバー</aside>`(`globals.css` の `@media print` で `display: none`)
+- ❌ `<aside style={{ display: isPrinting ? 'none' : 'block' }}>` のような React state 切替
+
+**理由**: C 案では React の state 変化はサーバ側 SSR の状態でしか反映されない。CSS で隠せば確実。
+
+### 10.6 印刷専用ページのレイアウト分離(任意・推奨)
+
+可能なら印刷ページは `app/(print)/...` のようなルートグループに分け、通常 UI のレイアウト(サイドバー等)を継承しない。
+
+- ✅ `app/(print)/worksheets/[id]/print/page.tsx` + `app/(print)/layout.tsx`(プリント用最小レイアウト)
+- 普通の `app/(app)/...` の認証必須レイアウトの外に置く
+
+**理由**: C 案で URL を直接叩く時、通常レイアウトのサイドバーやヘッダが入っていると印刷時に邪魔。最初から分離しておけば見た目調整も楽。
+
+### 10.7 共通の印刷 CSS は `app/globals.css` に集約
+
+- `@page` ルール
+- `.no-print` / `.page-break-before` / `.page-break-after` / `.page-break-avoid` 等のユーティリティクラス
+- 印刷時の `body` スタイル(背景白・文字色黒・基本フォントサイズ 10.5pt)
+
+→ ページ毎に重複定義しない。**雛形は globals.css に既に入っている**(2026-04-30)。
+
+### 10.8 NEVER(印刷関連の禁止事項)
+
+- ❌ JavaScript で印刷時の DOM を書き換える(規約 11.1)
+- ❌ 印刷可能なものをモーダル / 専用 URL なしで実装する(規約 11.2)
+- ❌ 印刷専用ページで `useEffect` / `useState` 等のクライアント遅延処理を使う(規約 11.3)
+- ❌ ピクセル単位の絶対配置で印刷レイアウトを組む(プリンタ・PDF 変換で崩れる、`mm` / `pt` を使う)
+- ❌ 印刷時の見た目をブラウザの DevTools で「都度確認」だけで済ませる(必ず実 PDF を出す)
+
+### 10.9 動作確認の流れ
+
+印刷 / PDF 出力の変更時は、以下を確認:
+
+1. 画面で **Ctrl+P / Cmd+P** → プレビューでレイアウト確認
+2. **A4 縦・横の両方**で崩れないか
+3. 「PDF として保存」で実 PDF を出してファイル開いて確認
+4. Phase 6 で C 案に移行したら、本番 URL で **PDF ダウンロードボタン**で同じ確認
+
+---
+
+## 11. このドキュメントの更新タイミング
 
 以下の場合は必ずこのファイルを更新する:
 

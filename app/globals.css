@@ -12,13 +12,61 @@ body {
   height: 100%;
 }
 
-/* 印刷時の共通スタイル(Phase 5 で本格化) */
+/* ===========================================
+ * 印刷専用スタイル
+ * 詳しい規約は CODING.md §11「印刷 CSS / PDF 出力規約」を参照。
+ * Phase 5(ブラウザ印刷)・Phase 6(Cloudflare Browser Rendering)双方で
+ * 同じ CSS が使われる。
+ * =========================================== */
+
+/* A4 縦・全周 15mm 余白(数学プリントの標準) */
+@page {
+  size: A4;
+  margin: 15mm;
+}
+
+/* 横向きが必要なプリントには `.landscape` クラスを付ける */
+@page landscape {
+  size: A4 landscape;
+}
+
 @media print {
+  /* 印刷用の基本タイポグラフィ */
   body {
-    background: white;
+    background: #fff !important;
+    color: #000 !important;
+    font-size: 10.5pt;
+    line-height: 1.6;
   }
 
+  /* 画面用の UI(ボタン・サイドバー等)は印刷時に消す */
   .no-print {
     display: none !important;
   }
+
+  /* リンクの URL を印刷で表示しない(数学プリントでは不要) */
+  a[href]::after {
+    content: none !important;
+  }
+
+  /* 改ページ制御クラス */
+  .page-break-before {
+    page-break-before: always;
+    break-before: page;
+  }
+  .page-break-after {
+    page-break-after: always;
+    break-after: page;
+  }
+  .page-break-avoid {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* 印刷時の余計な影・背景色を消す(インクの無駄遣い防止) */
+  * {
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
 }
+
