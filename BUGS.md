@@ -126,6 +126,40 @@ commit/push がスキップされていた。
 
 ---
 
+### B-007 `_` 始まりのフォルダは Next.js App Router で routable じゃない
+
+**症状**: エラー画面の動作確認用に `app/__test_error/page.tsx` を作って `https://.../test_error` にアクセスしたが、404 が返ってきた。期待していた `error.tsx` 画面ではなく、`not-found.tsx`(404 画面)が表示された。
+
+**原因**: Next.js App Router の仕様で、**フォルダ名を `_` で始めると "private folder" 扱い**になり、ルーティングから除外される。`__test_error`(アンダースコア 2 つ)も同様に除外対象。
+
+**対処**: フォルダ名を `app/test-error/`(ハイフン区切り)にリネームしたら解決。
+
+**教訓**: Next.js App Router では:
+- `_xxx/` → private folder(routable じゃない)
+- `(xxx)/` → route group(URL に出ないがルーティングはされる)
+- `[xxx]/` → 動的ルート
+- 普通のフォルダ名 → そのまま URL になる
+
+「URL に出さないが routable」にしたい時は **route group `(xxx)`** を使う。
+
+---
+
+### B-008 Server Component の本体で同期的に `throw` するとビルドが失敗する
+
+**症状**: B-007 修正後の `app/test-error/page.tsx` を push したら、Cloudflare Workers Builds が "Latest build failed" になり、本番デプロイがまるごと止まった。それまで動いていたサイトはそのまま(古いデプロイのまま)で残ったが、最新コードは反映されない状態。
+
+**原因**: Next.js は **静的レンダリング**(`next build` 中にページを事前生成する仕組み)が初期動作。`/test-error` のページコンポーネントが本体で同期的に `throw` していたため、ビルド時に Next.js がそのページをレンダリングしようとして例外を踏み、**ビルドそのものが失敗**した。
+意図は「ランタイムでエラーを投げて `error.tsx` を確認する」だったが、実際は「ビルド時にエラーを投げてビルドを止める」になっていた。
+
+**対処**: ページに `export const dynamic = "force-dynamic"` を追加して、ビルド時の事前レンダリングをスキップさせ、ランタイムにのみ実行されるようにした。
+
+**教訓**:
+- 動的に振る舞う(リクエストごとに異なる結果を返す)Server Component は、`force-dynamic` を明示するか、`cookies()` / `headers()` 等のリクエスト依存 API を呼ぶ
+- 「ビルド時にも実行される可能性がある」ことを忘れない
+- ローカルでビルドを試す習慣があれば事前に検出できたが、Squmath はローカル環境ゼロなので、Claude(私)のサンドボックスでビルドを実行する癖を付ける(`npm run build`)
+
+---
+
 ## 記入テンプレート
 
 ```md
