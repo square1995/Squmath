@@ -120,28 +120,92 @@ Google から callback URL に戻る → Supabase が JWT を発行
 | 「staff は master を編集できないが、コピーして自分のフォルダに置けば編集可能」 | **Route Handler の業務ロジック** | RLS だけでは表現しきれない複雑な処理 |
 | 「`role` のチェック」 | **Route Handler が `users.role` を読んで分岐** | RLS の関数からも参照可能だが、業務ロジックは Route Handler に集約 |
 
-### 3.3 master データの扱い
+### 3.3 master データの扱い(2026-05-07 シンジさんの方針で正式化)
 
-- master データ(=共通の問題集など)は `owner_id IS NULL` で表現する。
-- `staff` は master を**読めるが書けない**(RLS で表現)。
-- 「master を編集したい」時は、Route Handler が**自動で自分のフォルダにコピー**を作って、それを編集させる(編集対象は常に自分のもの)。
+#### 何が master か
+
+| データ | master の意味 | 識別 |
+|---|---|---|
+| `problems` | 全員共通のベース問題(admin が事前に整備した問題集) | `owner_id IS NULL` |
+| `tags` | 全員共通の分類タグ(単元別・テスト用などの共通ラベル) | `owner_id IS NULL` |
+
+#### master の権限
+
+- **作成・編集・削除は admin のみ**(=シンジさんが事前に整備する仕事)
+- staff は **読み取り専用**(RLS で書き込みを完全に弾く)
+- master の編集は Route Handler が `users.role = 'admin'` を確認したうえで実行する
+
+#### staff が「master を編集したい」と言った時の挙動
+
+`PUT /api/problems/[id]` に staff から master を更新するリクエストが来たら、Route Handler は **エラーにせず自動でコピーを作って個人化** する:
+
+1. 元の master 問題を service_role で読む
+2. `owner_id = auth.uid()` で新しい行を INSERT(content / meta / 紐付け済み master タグも複製)
+3. 新しい行に対して staff のリクエスト内容を反映
+4. 新しい個人問題の `id` を返す
+5. フロントは「コピーされて個人問題になりました」と表示して、ユーザーは新しい id でそのまま編集を続ける
+
+これにより **master が破壊される心配が無い** & **staff から見ると違和感なく編集できている**ように見える。
+
+### 3.4 個人データの扱い
+
+#### 識別と可視性
+
+- 個人データ = `owner_id = <ユーザID>`(NULL ではない)
+- **同じ staff からのみ閲覧・編集・削除可能**
+- 他の staff からは **完全に不可視**(RLS が弾く)
+- admin は調査・復元・サポート目的で **閲覧(SELECT)可能**。**書き込み(編集・削除)は基本しない**(運用ルール)
+
+#### 作成パターン
+
+| パターン | フロー | 結果 |
+|---|---|---|
+| 白紙から作成 | `/problems/new` で新規作成 | `owner_id = auth.uid()` の個人問題が直接作られる |
+| master からコピー | master 問題ページの「自分用にコピー」ボタン or 自動コピー(§3.3) | 元 master のコピーが個人問題として作られる(タグも複製) |
+
+#### 編集対象の自由度
+
+個人問題は **content / meta(単元・難易度・校種・学年)/ タグ・タイトルすべて自由に変更可**。元の master と紐付かないので、影響を心配せずアレンジできる。
+
+### 3.5 タグの所有モデル(master / 個人 の二段構造)
+
+`tags` テーブルも `problems` と同じ `owner_id` ルールに従う。
+
+| 種別 | 識別 | 作成・編集・削除 | 可視性 | どこに貼れるか |
+|---|---|---|---|---|
+| マスタータグ | `tags.owner_id IS NULL` | admin のみ | 全員 | master 問題・個人問題の両方 |
+| 個人タグ | `tags.owner_id = <ユーザID>` | 本人のみ | 本人のみ | **自分の個人問題のみ** |
+
+#### 設計ルール
+
+- **個人タグはマスター問題に貼れない**: 個人タグの存在が他の staff に漏れることを防ぐため。UI 側で master 問題を開いている時は個人タグの選択肢を出さない。
+- **マスター問題には master タグのみ**: master 問題のタグ付けも admin だけが行う(staff のリクエストは §3.3 のコピーでバイパス)
+- **タグ自身の論理削除**: 物理削除はしない。`tags.deleted_at` を立てる
+- **マスタータグへの「昇格」**: 個人タグでよく使われているものを admin が見て「マスタータグ化」できる。実装は: 新しい master タグを作って、対象の個人タグを論理削除して `problem_tags` を付け替える(将来 Phase 2 後半で UI 化する)
+
+#### `problem_tags` の権限
+
+- 自分の個人問題に対する INSERT / DELETE のみ可
+- master 問題に対する変更は admin が Route Handler 経由で行う(staff のリクエストは §3.3 のコピーへ流れる)
 
 ---
 
 ## 4. 画面構成・画面遷移
 
-### 4.1 画面一覧(Phase 1 時点)
+### 4.1 画面一覧
 
 | URL | 役割 | 認証 |
 |---|---|---|
 | `/login` | ログイン画面(Google OAuth ボタン) | 不要 |
 | `/auth/callback` | OAuth コールバック処理(Route Handler) | — |
 | `/dashboard` | ログイン後のホーム画面 | 必要 |
-| `/problems` | 問題一覧 | 必要 |
-| `/problems/new` | 問題新規作成 | 必要 |
-| `/problems/[id]` | 問題編集 | 必要 |
+| `/problems` | 問題一覧(`?owner=master/me/all` で切替、既定: `all`) | 必要 |
+| `/problems/new` | 問題新規作成(白紙、必ず個人問題になる) | 必要 |
+| `/problems/[id]` | 問題編集(master の編集は自動コピー、§3.3) | 必要 |
+| `/my` | マイページ(自分の個人問題のみの一覧、`/problems?owner=me` のショートカット) | 必要 |
+| `/tags`(Phase 2 後半) | タグ管理(master タグは admin のみ作成・編集) | 必要 |
 
-Phase 2 以降で `/worksheets`、`/print/[id]` などが増える。
+Phase 3 以降で `/worksheets`、`/print/[id]` などが増える。
 
 ### 4.2 画面遷移図(Phase 1)
 
@@ -166,14 +230,17 @@ Phase 2 以降で `/worksheets`、`/print/[id]` などが増える。
 ### 5.1 URL 体系
 
 ```
-/api/problems            問題リソース
+/api/problems                     問題リソース
 /api/problems/[id]
-/api/worksheets          (Phase 3〜)
-/api/folders             (Phase 2〜)
-/api/tags                (Phase 2〜)
-/api/admin/allowed-emails (admin 専用)
-/api/auth/callback       OAuth コールバック
-/api/ocr                 Gemini OCR エンドポイント
+/api/problems/[id]/copy           master を個人にコピー(§5.5)
+/api/problems/[id]/tags           問題に紐付くタグの取得・置き換え
+/api/tags                         タグリソース(master + 自分の個人タグ)
+/api/tags/[id]
+/api/worksheets                   (Phase 3〜)
+/api/folders                      (Phase 2〜)
+/api/admin/allowed-emails         admin 専用
+/api/auth/callback                OAuth コールバック
+/api/ocr                          Gemini OCR エンドポイント
 ```
 
 ### 5.2 メソッド対応
@@ -196,13 +263,78 @@ Phase 2 以降で `/worksheets`、`/print/[id]` などが増える。
 | `grade` | 1〜3 | 学年 |
 | `unit` | string | 単元(完全一致) |
 | `difficulty` | 1〜5 | 難易度 |
+| `owner` | `me` / `master` / `all` | 所有スコープ。`me` = 自分の個人問題のみ / `master` = master 問題のみ / `all` = 両方(既定) |
+| `tag_id` | uuid | 指定タグが付いた問題のみ(`problem_tags` を inner join) |
 | `sort` | enum | `updated_desc`(既定) / `updated_asc` / `created_desc` / `created_asc` / `title_asc` |
 | `limit` | int | 1〜100(既定 50) |
 | `offset` | int | 0〜(既定 0) |
 
 レスポンス: `{ ok: true, data: { items: Problem[], next_offset: number | null, returned: number } }`。`next_offset` が `null` でなければ、その値を `offset` に渡せば次ページが取れる。
 
-`folder` / `tag_id` は **Phase 2 タグ・フォルダ実装時に追加予定**。
+`folder` は **Phase 2 後半のフォルダ実装時に追加予定**。
+
+### 5.5 master → 個人のコピー API
+
+#### `POST /api/problems/[id]/copy`
+
+- master 問題(`owner_id IS NULL`)を、リクエスト元 staff の個人問題としてコピーする。
+- リクエスト: body 不要(将来 `{ title_override?: string }` 等で拡張可)
+- 動作:
+  1. 認証確認 → master 問題を読む(staff でも SELECT 可)
+  2. 新しい `id` を発行、`owner_id = auth.uid()` で INSERT
+  3. content / meta は完全コピー
+  4. `problem_tags` のうち、master タグ(`tags.owner_id IS NULL`)は新個人問題にも紐付ける
+  5. レスポンス: `{ ok: true, data: <copied Problem> }`
+- master 以外(個人問題)に対して呼ばれた場合は 400 を返す(意味がない & 他人の個人問題には RLS で SELECT も弾かれる)
+
+### 5.6 自動コピー(staff が master を編集しようとした時)
+
+`PUT /api/problems/[id]`(または `DELETE /api/problems/[id]`)が staff から master 問題に対して呼ばれた時、Route Handler は **エラーにせず自動コピーで対応**する(§3.3):
+
+1. 対象が master 問題かを確認
+2. master であれば §5.5 の copy ロジックを実行して新個人問題を得る
+3. 新個人問題に対してリクエスト内容を反映
+4. レスポンスは `{ ok: true, data: <copied & edited Problem>, copied_from: <master_id> }`(`copied_from` を含むことでフロントが「コピーが発生した」を表示できる)
+5. 元の master は変更されない
+
+### 5.7 タグ API
+
+#### `GET /api/tags`
+
+- レスポンス: `{ ok: true, data: { master: Tag[], personal: Tag[] } }`
+- master タグ + 自分の個人タグを別々に返す(UI で見出しを分けるため)
+- `?q=<keyword>` で名前部分一致絞り込み
+
+#### `POST /api/tags`
+
+- body: `{ name: string, color?: string, scope: "master" | "personal" }`
+- `scope: "master"` は admin のみ可。staff が指定すると 403。
+- `scope: "personal"` は誰でも可。`owner_id = auth.uid()` で INSERT。
+- レスポンス: 作成された `Tag`
+
+#### `PUT /api/tags/[id]`
+
+- body: `{ name?: string, color?: string }`
+- 自分の個人タグ → 本人のみ可。
+- master タグ → admin のみ可。
+
+#### `DELETE /api/tags/[id]`
+
+- 論理削除(`deleted_at` を立てる)。物理削除はしない。
+- 自分の個人タグ → 本人のみ可。master タグ → admin のみ可。
+
+#### `GET /api/problems/[id]/tags`
+
+- 指定問題に紐付いているタグ一覧。
+- master 問題なら master タグのみ、個人問題なら master + 自分の個人タグの混合。
+
+#### `PUT /api/problems/[id]/tags`
+
+- body: `{ tag_ids: string[] }`
+- そのリストで `problem_tags` を **置き換え**(差分計算で INSERT / DELETE)
+- 個人問題に対する操作は本人のみ可。
+- staff が master 問題に対して呼んだ場合は §5.6 の自動コピーと同じく **コピーを作ってその新個人問題のタグを更新**する。
+- 個人タグを master 問題に貼ろうとしたリクエストは 400 で拒否(§3.5 ルール)。
 
 ### 5.3 レスポンス形式
 

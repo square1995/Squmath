@@ -18,20 +18,24 @@
 
 ## 1. テーブル一覧
 
-| テーブル | 役割 | Phase |
-|---|---|---|
-| `users` | アプリ側のプロファイル(`auth.users` を拡張) | Phase 1 |
-| `allowed_emails` | ログイン許可メアドリスト | Phase 1 |
-| `problems` | 問題本体(JSONB content/meta で拡張) | Phase 1 |
-| `tags` | タグマスター | Phase 2 |
-| `problem_tags` | 問題とタグの中間テーブル | Phase 2 |
-| `folders` | フォルダ階層 | Phase 2 |
-| `worksheets` | プリント本体 | Phase 3 |
-| `worksheet_blocks` | プリント内の問題ブロック(問題参照 or 自由記述) | Phase 3 |
-| `audit_logs` | 重要操作の監査ログ(任意・将来) | Phase 7 |
+| テーブル | 役割 | Phase | owner_id の運用 |
+|---|---|---|---|
+| `users` | アプリ側のプロファイル(`auth.users` を拡張) | Phase 1 | — |
+| `allowed_emails` | ログイン許可メアドリスト | Phase 1 | — |
+| `problems` | 問題本体(JSONB content/meta で拡張) | Phase 1 | NULL = master / NOT NULL = 個人 |
+| `tags` | タグ(master + 個人) | Phase 2 | NULL = master / NOT NULL = 個人 |
+| `problem_tags` | 問題とタグの中間テーブル | Phase 2 | — |
+| `folders` | フォルダ階層 | Phase 2 後半 | NULL = master / NOT NULL = 個人 |
+| `worksheets` | プリント本体 | Phase 3 | 同上 |
+| `worksheet_blocks` | プリント内の問題ブロック(問題参照 or 自由記述) | Phase 3 | — |
+| `audit_logs` | 重要操作の監査ログ(任意・将来) | Phase 7 | — |
 
 **Phase 1 では `users` / `allowed_emails` / `problems` の 3 つだけ作成**する。
 Phase 2 以降のテーブルは、その Phase に着手するときに本ファイルを更新したうえで作る。
+
+### master / 個人 の二段構造(2026-05-07 シンジさんの方針で正式化)
+
+`owner_id IS NULL` を **master(全員共通)** として扱うルールは Phase 1 から `problems` で運用していたが、Phase 2 で `tags` にも同じルールを適用する。詳細は DESIGN.md §3 を参照。
 
 ---
 
@@ -221,7 +225,166 @@ create index problems_title_trgm_idx on public.problems
   using gin (title gin_trgm_ops);
 ```
 
-### 2.5 `updated_at` 自動更新トリガ
+### 2.5 `tags`(Phase 2 で追加予定)
+
+> 📝 **設計のみここに記載**。実際の本番適用は新しい migration ファイル(`supabase/migrations/<timestamp>_add_tags.sql`)を追加して GitHub Actions 経由で行う(CODING.md §9.5)。
+
+```sql
+create table public.tags (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  color text,                                  -- 任意(例: '#FF6B6B')。UI で表示色に使う
+  owner_id uuid references public.users(id) on delete cascade,
+  -- ↑ NULL = マスタータグ(全員共通)/ NOT NULL = 個人タグ(本人のみ)
+  created_by uuid references public.users(id) on delete set null,
+  -- ↑ 実際に作った人(監査用)。owner_id とは別に保持する(master 化されても作者が分かるように)
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  deleted_at timestamptz
+);
+
+-- 名前重複防止: master タグは全体で 1 つ、個人タグは owner_id ごとに 1 つ
+create unique index tags_name_master_unique
+  on public.tags (name)
+  where owner_id is null and deleted_at is null;
+
+create unique index tags_name_personal_unique
+  on public.tags (owner_id, name)
+  where owner_id is not null and deleted_at is null;
+
+create index tags_owner_id_idx on public.tags (owner_id);
+create index tags_deleted_at_idx on public.tags (deleted_at);
+
+alter table public.tags enable row level security;
+
+-- SELECT: master タグ + 自分の個人タグ(削除済みは除外)
+create policy "tags_select_master_or_own"
+  on public.tags for select
+  using (
+    deleted_at is null
+    and (owner_id is null or owner_id = auth.uid())
+  );
+
+-- SELECT: admin は全件
+create policy "tags_select_admin"
+  on public.tags for select
+  using (
+    exists (
+      select 1 from public.users
+      where users.id = auth.uid()
+        and users.role = 'admin'
+        and users.deleted_at is null
+    )
+  );
+
+-- INSERT: 個人タグは本人のみ
+create policy "tags_insert_personal"
+  on public.tags for insert
+  with check (owner_id = auth.uid());
+
+-- INSERT: master タグは admin のみ(owner_id IS NULL を許可するのは admin だけ)
+create policy "tags_insert_master_admin"
+  on public.tags for insert
+  with check (
+    owner_id is null
+    and exists (
+      select 1 from public.users
+      where users.id = auth.uid()
+        and users.role = 'admin'
+        and users.deleted_at is null
+    )
+  );
+
+-- UPDATE: 個人タグは本人のみ
+create policy "tags_update_personal"
+  on public.tags for update
+  using (owner_id = auth.uid() and deleted_at is null)
+  with check (owner_id = auth.uid());
+
+-- UPDATE: master タグは admin のみ(論理削除も含む)
+create policy "tags_update_master_admin"
+  on public.tags for update
+  using (
+    owner_id is null
+    and exists (
+      select 1 from public.users
+      where users.id = auth.uid()
+        and users.role = 'admin'
+        and users.deleted_at is null
+    )
+  )
+  with check (owner_id is null);
+
+create trigger tags_set_updated_at
+  before update on public.tags
+  for each row execute function public.set_updated_at();
+```
+
+#### NEVER(tags 関連)
+
+- ❌ master タグの owner_id を後から個人 ID に書き換える(意味が変わるため、UPDATE で `owner_id` を触る経路は service_role でも残さない)
+- ❌ tags の物理削除(論理削除のみ。物理削除は admin が SQL Editor で慎重に)
+
+### 2.6 `problem_tags`(Phase 2 で追加予定)
+
+```sql
+create table public.problem_tags (
+  problem_id uuid not null references public.problems(id) on delete cascade,
+  tag_id uuid not null references public.tags(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (problem_id, tag_id)
+);
+
+create index problem_tags_tag_id_idx on public.problem_tags (tag_id);
+create index problem_tags_problem_id_idx on public.problem_tags (problem_id);
+
+alter table public.problem_tags enable row level security;
+
+-- SELECT: 親問題が見えるなら中間も見える(問題側の RLS が可視性を制御するので、ここは緩く)
+create policy "problem_tags_select_via_problem"
+  on public.problem_tags for select
+  using (
+    exists (
+      select 1 from public.problems p
+      where p.id = problem_id
+    )
+  );
+
+-- INSERT: 自分の個人問題に対してのみ。master 問題への直接の付与は admin が service_role で行う
+create policy "problem_tags_insert_own_problem"
+  on public.problem_tags for insert
+  with check (
+    exists (
+      select 1 from public.problems p
+      where p.id = problem_id and p.owner_id = auth.uid()
+    )
+    -- かつタグも閲覧可能なもの(master か自分の個人タグ)
+    and exists (
+      select 1 from public.tags t
+      where t.id = tag_id
+        and t.deleted_at is null
+        and (t.owner_id is null or t.owner_id = auth.uid())
+    )
+  );
+
+-- DELETE: 自分の個人問題に対してのみ
+create policy "problem_tags_delete_own_problem"
+  on public.problem_tags for delete
+  using (
+    exists (
+      select 1 from public.problems p
+      where p.id = problem_id and p.owner_id = auth.uid()
+    )
+  );
+```
+
+#### `meta.tag_ids` との関係
+
+- **Phase 2 以降は `problem_tags` を真とする**(中間テーブルが正)
+- `meta.tag_ids` は使わない(JSONB の値と中間テーブルの二重管理を避けるため)
+- もし過去に `meta.tag_ids` を入れたデータがあれば、Phase 2 着手時の data migration 時に空配列にする(または無視する)
+
+### 2.7 `updated_at` 自動更新トリガ
 
 ```sql
 -- 共通の更新時刻トリガ関数
@@ -278,16 +441,13 @@ create trigger problems_set_updated_at
   "grade": 1,                     // 1, 2, 3
   "unit": "二次方程式",           // 単元名
   "difficulty": 3,                // 1〜5
-  "tag_ids": [                    // タグ ID(Phase 2 で正規化テーブル参照)
-    "uuid-aaaa", "uuid-bbbb"
-  ],
   "source": "Studyaid 2024 春"    // 出典(任意)
 }
 ```
 
 **ルール**:
 - 検索条件として使う項目は `meta` に入れて、必要なら**生成カラム**で取り出してインデックス対象にする。
-- `tag_ids` の配列は `meta` に入れるが、**`meta.tags` のような名前の配列はやめる**(CLAUDE.md NEVER 参照、`tags` テーブルへ正規化する設計のため)。
+- **タグは `problem_tags` 中間テーブルを正とする**(2026-05-07 シンジさんの方針)。`meta.tag_ids` も `meta.tags` も使わない(二重管理を避ける、`tags` テーブルへ正規化済み)。
 
 ### 3.3 `worksheet_blocks.content`(Phase 3 以降)
 
@@ -301,7 +461,9 @@ create trigger problems_set_updated_at
 |---|---|---|---|---|
 | `users` | 自分 + admin は全員 | (Route Handler が service_role で作成) | 自分の安全列のみ | (使わない) |
 | `allowed_emails` | admin のみ | admin のみ | admin のみ | admin のみ |
-| `problems` | 自分 + master + admin は全部 | 自分の owner_id のみ | 自分の owner_id のみ | (使わない、論理削除を UPDATE) |
+| `problems` | 自分 + master + admin は全部 | 自分の owner_id のみ(master 化は service_role) | 自分の owner_id のみ(master 編集は service_role + admin チェック) | (使わない、論理削除を UPDATE) |
+| `tags` | master + 自分の個人タグ + admin は全件 | 個人は本人 / master は admin | 個人は本人 / master は admin | (使わない、論理削除を UPDATE) |
+| `problem_tags` | 親 problem が見える時のみ | 自分の個人問題に対してのみ | (使わない) | 自分の個人問題に対してのみ |
 
 **サービスロール(`service_role`)経由の書き込み**は RLS をバイパスする。Route Handler 内で:
 - 初回ログイン時の `users` 作成
