@@ -167,7 +167,59 @@ Google から callback URL に戻る → Supabase が JWT を発行
 
 個人問題は **content / meta(単元・難易度・校種・学年)/ タグ・タイトルすべて自由に変更可**。元の master と紐付かないので、影響を心配せずアレンジできる。
 
-### 3.5 タグの所有モデル(master / 個人 の二段構造)
+### 3.5 admin の代理操作(impersonation)
+
+(2026-05-07 シンジさんの指示で導入)
+
+#### 何のための機能か
+
+- 操作に不慣れな staff の代わりに、admin が画面上で **その staff として操作** できるようにする
+- 結果は staff の所有として保存され、staff 自身が後で編集・削除できる(マイページに残る)
+- 代理操作のセッションは全て監査ログとして残す
+
+#### 動作モデル
+
+- admin は **ログインしたまま**(Cookie に admin の Supabase セッションを保持)
+- admin が `/admin/users` で staff を選び「代理操作」ボタンを押すと、**追加の Cookie**(`squmath_impersonate=<impersonation_id>`)が発行される
+- 以後、Route Handler / Server Component は **「実 user(=admin)」と「effective user(=代理対象 staff)」の 2 つを区別**して扱う
+- 「終了」ボタンで `impersonations.ended_at` をセット & Cookie 削除 → 通常モードに戻る
+- タイムアウトはなし(ブラウザを閉じる or 手動終了まで継続)
+
+#### 認証ヘルパ(`lib/auth/effective-user.ts` を新設予定)
+
+```ts
+type EffectiveUser = {
+  realUser: User;             // Supabase Auth の auth.uid() 由来(admin)
+  effectiveUserId: string;    // 通常は realUser.id、代理中は target_user_id
+  isImpersonating: boolean;
+  impersonation: { id: string; target_user_id: string; started_at: string } | null;
+};
+
+export async function getEffectiveUser(): Promise<EffectiveUser>;
+export async function requireEffectiveUser(): Promise<EffectiveUser | { response: Response }>;
+```
+
+Route Handler / Server Component では `requireUser()` の代わりに `requireEffectiveUser()` を呼ぶ。Phase 2 着手時に既存の Route Handler も書き換える(B-2 にて)。
+
+#### 書き込みは service_role で
+
+- Supabase の RLS は `auth.uid()`(=admin の id)を見るため、staff の id で `INSERT` しようとすると RLS で弾かれる
+- そのため **代理中の書き込みは Route Handler 内で `service_role` クライアントを使い、`owner_id = effectiveUserId` を明示的にセットする**
+- これは「DB に業務ロジックを持たせない」原則と「フロントから owner_id を送らない」原則の両方を守る:Route Handler が JWT(admin)+ Cookie(impersonation_id)+ DB(`impersonations`)を突合して effective user id を**サーバ側で**決定するため
+
+#### バナー UI
+
+- ルートレイアウト(`app/(app)/layout.tsx`)が `getEffectiveUser()` を呼び、代理中なら画面上部に黄色いバナーを表示
+- バナーには「現在 山田太郎 として操作中(管理者: シンジ)」「[終了]」ボタン
+- 代理中は admin 専用メニュー(`/admin/...`)へのリンクを隠す(誤操作防止)
+
+#### 監査ログとセキュリティ
+
+- すべての代理操作開始 / 終了は `impersonations` テーブルに記録(誰が・誰として・いつから・いつまで)
+- Cookie が改ざんされても、Route Handler が `impersonations.id` で DB を突合し、`admin_user_id = auth.uid()` & `ended_at IS NULL` を確認するので、無効な代理状態は使えない
+- 代理中の admin が悪意ある操作をした場合の検知は、`impersonations` のログ + 該当時間帯の `problems.updated_at` 突合で可能
+
+### 3.6 タグの所有モデル(master / 個人 の二段構造)
 
 `tags` テーブルも `problems` と同じ `owner_id` ルールに従う。
 
@@ -204,6 +256,7 @@ Google から callback URL に戻る → Supabase が JWT を発行
 | `/problems/[id]` | 問題編集(master の編集は自動コピー、§3.3) | 必要 |
 | `/my` | マイページ(自分の個人問題のみの一覧、`/problems?owner=me` のショートカット) | 必要 |
 | `/tags`(Phase 2 後半) | タグ管理(master タグは admin のみ作成・編集) | 必要 |
+| `/admin/users` | admin 専用: 登録ユーザー一覧 + 「代理操作」ボタン | admin のみ |
 
 Phase 3 以降で `/worksheets`、`/print/[id]` などが増える。
 
@@ -239,6 +292,10 @@ Phase 3 以降で `/worksheets`、`/print/[id]` などが増える。
 /api/worksheets                   (Phase 3〜)
 /api/folders                      (Phase 2〜)
 /api/admin/allowed-emails         admin 専用
+/api/admin/users                  admin 専用: 登録ユーザー一覧
+/api/admin/impersonations         admin 専用: 代理操作の開始
+/api/admin/impersonations/[id]    admin 専用: 代理操作の終了
+/api/me/impersonation             代理中の自分の状態(レイアウトのバナー用)
 /api/auth/callback                OAuth コールバック
 /api/ocr                          Gemini OCR エンドポイント
 ```
@@ -334,7 +391,53 @@ Phase 3 以降で `/worksheets`、`/print/[id]` などが増える。
 - そのリストで `problem_tags` を **置き換え**(差分計算で INSERT / DELETE)
 - 個人問題に対する操作は本人のみ可。
 - staff が master 問題に対して呼んだ場合は §5.6 の自動コピーと同じく **コピーを作ってその新個人問題のタグを更新**する。
-- 個人タグを master 問題に貼ろうとしたリクエストは 400 で拒否(§3.5 ルール)。
+- 個人タグを master 問題に貼ろうとしたリクエストは 400 で拒否(§3.6 ルール)。
+
+### 5.8 代理操作(impersonation)API
+
+#### `GET /api/admin/users`
+
+- レスポンス: `{ ok: true, data: AppUser[] }`(自分以外の登録 staff 一覧、`deleted_at IS NULL`)
+- admin のみ。staff が呼んだら 403。
+
+#### `POST /api/admin/impersonations`
+
+- body: `{ target_user_id: string, reason?: string }`
+- 動作:
+  1. 認証 + admin role 確認
+  2. target user の存在確認(`deleted_at IS NULL`)
+  3. **既存の有効な代理セッションがあれば終了**(`ended_at = now()` をセット、1 admin = 1 セッションだけ)
+  4. `impersonations` に新規 INSERT(service_role で書く)
+  5. レスポンスヘッダで Cookie 発行: `squmath_impersonate=<impersonation_id>; HttpOnly; Secure; SameSite=Lax; Path=/`
+  6. body: `{ ok: true, data: { impersonation_id, target_user: { id, display_name, email } } }`
+
+#### `DELETE /api/admin/impersonations/[id]`
+
+- 動作:
+  1. 認証 + admin role 確認
+  2. 対象 impersonation が `admin_user_id = auth.uid()` で `ended_at IS NULL` であることを確認
+  3. `ended_at = now()` を立てる
+  4. Cookie `squmath_impersonate` を `Max-Age=0` で削除
+- レスポンス: `{ ok: true, data: { id } }`
+
+#### `GET /api/me/impersonation`
+
+- 現在のセッションが代理中かどうかを返す(レイアウトのバナー描画用)
+- レスポンス: `{ ok: true, data: { is_impersonating: boolean, target_user: AppUser | null, impersonation_id: string | null } }`
+- 認証必須。staff から呼ばれた場合は常に `is_impersonating: false`
+
+### 5.9 既存 API の `effectiveUserId` 化(Phase 2 で実施)
+
+代理操作対応のため、Phase 1 で書いた既存 API の `auth.user.id` 参照箇所をすべて `effectiveUserId` に置き換える(`requireUser()` → `requireEffectiveUser()`)。具体的には:
+
+| API | 変更点 |
+|---|---|
+| `POST /api/problems` | `owner_id = effectiveUserId`(代理中なら staff の id でセット) |
+| `PUT /api/problems/[id]` | 「自分の問題か」のチェックを `owner_id = effectiveUserId` で行う、書き込みは service_role 経由 |
+| `DELETE /api/problems/[id]` | 同上 |
+| `POST /api/problems/[id]/copy` | コピー先の `owner_id = effectiveUserId` |
+| `POST /api/tags` (個人スコープ) | `owner_id = effectiveUserId` |
+| `PUT /api/problems/[id]/tags` | 「自分の問題か」のチェックを effective で行う |
 
 ### 5.3 レスポンス形式
 
