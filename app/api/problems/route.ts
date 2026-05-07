@@ -1,5 +1,9 @@
 import { createServerSupabase } from "@/lib/supabase/server";
-import { requireUser } from "@/lib/auth/guard";
+import { createServiceSupabase } from "@/lib/supabase/service";
+import {
+  requireEffectiveUser,
+  getWriteClient,
+} from "@/lib/auth/effective-user";
 import { ok, err } from "@/lib/api/response";
 import type {
   CreateProblemBody,
@@ -25,7 +29,7 @@ const MAX_LIMIT = 100;
 // GET /api/problems  一覧取得(削除済みは除外)
 // クエリ: q / subject / school_level / grade / unit / difficulty / sort / limit / offset
 export async function GET(request: Request) {
-  const auth = await requireUser();
+  const auth = await requireEffectiveUser();
   if (auth.response) return auth.response;
 
   const sp = new URL(request.url).searchParams;
@@ -49,12 +53,20 @@ export async function GET(request: Request) {
 
   const sortRule = SORT_MAP[sortKey] ?? SORT_MAP.updated_desc;
 
-  const supabase = await createServerSupabase();
+  // 代理中は service_role で読み、明示的に「自分 or master」で絞る
+  const supabase = auth.user.isImpersonating
+    ? createServiceSupabase()
+    : await createServerSupabase();
+
   let query = supabase.from("problems").select("*").is("deleted_at", null);
 
-  if (q) {
-    query = query.ilike("title", `%${q}%`);
+  if (auth.user.isImpersonating) {
+    query = query.or(
+      `owner_id.is.null,owner_id.eq.${auth.user.effectiveUserId}`,
+    );
   }
+
+  if (q) query = query.ilike("title", `%${q}%`);
   if (subject) query = query.eq("subject", subject);
   if (schoolLevel) query = query.eq("school_level", schoolLevel);
   if (gradeStr) {
@@ -67,7 +79,6 @@ export async function GET(request: Request) {
     if (Number.isFinite(d)) query = query.eq("difficulty", d);
   }
 
-  // limit+1 件取って次ページ有無を判定
   query = query
     .order(sortRule.column, { ascending: sortRule.ascending })
     .range(offset, offset + limit);
@@ -91,9 +102,9 @@ export async function GET(request: Request) {
   return ok(response);
 }
 
-// POST /api/problems  新規作成
+// POST /api/problems  新規作成(常に個人問題: owner_id = effectiveUserId)
 export async function POST(request: Request) {
-  const auth = await requireUser();
+  const auth = await requireEffectiveUser();
   if (auth.response) return auth.response;
 
   const body = (await request.json().catch(() => null)) as
@@ -107,11 +118,11 @@ export async function POST(request: Request) {
     return err("VALIDATION", "タイトルを入力してください", 400);
   }
 
-  const supabase = await createServerSupabase();
+  const supabase = await getWriteClient(auth.user);
   const { data, error } = await supabase
     .from("problems")
     .insert({
-      owner_id: auth.user.id,
+      owner_id: auth.user.effectiveUserId,
       title: body.title.trim(),
       content: body.content ?? {},
       meta: body.meta ?? {},

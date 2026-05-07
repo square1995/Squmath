@@ -1,5 +1,9 @@
 import { createServerSupabase } from "@/lib/supabase/server";
-import { requireUser } from "@/lib/auth/guard";
+import { createServiceSupabase } from "@/lib/supabase/service";
+import {
+  requireEffectiveUser,
+  getWriteClient,
+} from "@/lib/auth/effective-user";
 import { ok, err } from "@/lib/api/response";
 import type { UpdateProblemBody } from "@/types/api";
 
@@ -7,11 +11,16 @@ type Ctx = { params: Promise<{ id: string }> };
 
 // GET /api/problems/[id]  1 件取得
 export async function GET(_request: Request, { params }: Ctx) {
-  const auth = await requireUser();
+  const auth = await requireEffectiveUser();
   if (auth.response) return auth.response;
 
   const { id } = await params;
-  const supabase = await createServerSupabase();
+
+  // 代理中は service_role で読んで明示的にチェック
+  const supabase = auth.user.isImpersonating
+    ? createServiceSupabase()
+    : await createServerSupabase();
+
   const { data, error } = await supabase
     .from("problems")
     .select("*")
@@ -24,12 +33,22 @@ export async function GET(_request: Request, { params }: Ctx) {
   }
   if (!data) return err("NOT_FOUND", "問題が見つかりません", 404);
 
+  if (auth.user.isImpersonating) {
+    if (
+      data.owner_id !== null &&
+      data.owner_id !== auth.user.effectiveUserId
+    ) {
+      return err("NOT_FOUND", "問題が見つかりません", 404);
+    }
+  }
+
   return ok(data);
 }
 
-// PUT /api/problems/[id]  更新
+// PUT /api/problems/[id]  更新(自分の個人問題のみ)
+// master 問題への編集自動コピーは Step B-3 で実装する。今は staff の通常編集のみ。
 export async function PUT(request: Request, { params }: Ctx) {
-  const auth = await requireUser();
+  const auth = await requireEffectiveUser();
   if (auth.response) return auth.response;
 
   const body = (await request.json().catch(() => null)) as
@@ -52,36 +71,57 @@ export async function PUT(request: Request, { params }: Ctx) {
   }
 
   const { id } = await params;
-  const supabase = await createServerSupabase();
+  const supabase = await getWriteClient(auth.user);
+
+  // 代理中は RLS が効かないため、effectiveUserId を必ずフィルタに入れる
   const { data, error } = await supabase
     .from("problems")
     .update(update)
     .eq("id", id)
+    .eq("owner_id", auth.user.effectiveUserId)
     .select()
-    .single();
+    .maybeSingle();
 
   if (error) {
     console.error("[PUT /api/problems/:id] db error", error);
     return err("INTERNAL", "更新に失敗しました", 500);
   }
+  if (!data) {
+    return err(
+      "NOT_FOUND",
+      "問題が見つからないか、編集権限がありません",
+      404,
+    );
+  }
   return ok(data);
 }
 
-// DELETE /api/problems/[id]  論理削除(deleted_at をセット)
+// DELETE /api/problems/[id]  論理削除(自分の個人問題のみ)
 export async function DELETE(_request: Request, { params }: Ctx) {
-  const auth = await requireUser();
+  const auth = await requireEffectiveUser();
   if (auth.response) return auth.response;
 
   const { id } = await params;
-  const supabase = await createServerSupabase();
-  const { error } = await supabase
+  const supabase = await getWriteClient(auth.user);
+
+  const { data, error } = await supabase
     .from("problems")
     .update({ deleted_at: new Date().toISOString() })
-    .eq("id", id);
+    .eq("id", id)
+    .eq("owner_id", auth.user.effectiveUserId)
+    .select("id")
+    .maybeSingle();
 
   if (error) {
     console.error("[DELETE /api/problems/:id] db error", error);
     return err("INTERNAL", "削除に失敗しました", 500);
   }
-  return ok({ id });
+  if (!data) {
+    return err(
+      "NOT_FOUND",
+      "問題が見つからないか、削除権限がありません",
+      404,
+    );
+  }
+  return ok({ id: data.id });
 }
