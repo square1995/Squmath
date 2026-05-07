@@ -25,6 +25,7 @@
 | `problems` | 問題本体(JSONB content/meta で拡張) | Phase 1 | NULL = master / NOT NULL = 個人 |
 | `tags` | タグ(master + 個人) | Phase 2 | NULL = master / NOT NULL = 個人 |
 | `problem_tags` | 問題とタグの中間テーブル | Phase 2 | — |
+| `impersonations` | admin の代理操作セッション履歴 | Phase 2 | — |
 | `folders` | フォルダ階層 | Phase 2 後半 | NULL = master / NOT NULL = 個人 |
 | `worksheets` | プリント本体 | Phase 3 | 同上 |
 | `worksheet_blocks` | プリント内の問題ブロック(問題参照 or 自由記述) | Phase 3 | — |
@@ -384,7 +385,63 @@ create policy "problem_tags_delete_own_problem"
 - `meta.tag_ids` は使わない(JSONB の値と中間テーブルの二重管理を避けるため)
 - もし過去に `meta.tag_ids` を入れたデータがあれば、Phase 2 着手時の data migration 時に空配列にする(または無視する)
 
-### 2.7 `updated_at` 自動更新トリガ
+### 2.7 `impersonations`(Phase 2 で追加予定)
+
+> 📝 admin の代理操作セッションを記録するテーブル(DESIGN.md §3.5)。設計のみここに記載。
+
+```sql
+create table public.impersonations (
+  id uuid primary key default gen_random_uuid(),
+  admin_user_id uuid not null references public.users(id) on delete cascade,
+  -- ↑ 代理操作を実施した admin(常に role='admin' のユーザ)
+  target_user_id uuid not null references public.users(id) on delete cascade,
+  -- ↑ 代理対象の staff
+  reason text,
+  -- ↑ 任意のメモ(なぜ代理操作したか)
+  started_at timestamptz not null default now(),
+  ended_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+-- 自分のアクティブな代理セッションを引くため
+create index impersonations_admin_active_idx
+  on public.impersonations (admin_user_id)
+  where ended_at is null;
+
+create index impersonations_target_user_id_idx on public.impersonations (target_user_id);
+create index impersonations_started_at_idx on public.impersonations (started_at desc);
+
+alter table public.impersonations enable row level security;
+
+-- SELECT: admin だけが全件閲覧可
+create policy "impersonations_select_admin"
+  on public.impersonations for select
+  using (
+    exists (
+      select 1 from public.users
+      where users.id = auth.uid()
+        and users.role = 'admin'
+        and users.deleted_at is null
+    )
+  );
+
+-- INSERT / UPDATE は Route Handler の service_role 経由のみ
+-- (フロントから直接書かせない設計)
+```
+
+#### 運用ルール
+
+- **物理削除しない**(完全な監査ログとして残す)
+- 1 admin = 同時に 1 セッションのみ(Route Handler が新規作成時に既存アクティブセッションを `ended_at = now()` で終了させる)
+- 開始/終了は Route Handler が **service_role** で書き込む(RLS で INSERT/UPDATE ポリシーを定義しないことで、フロント直接書き込みを構造的に不可能にする)
+
+#### NEVER(impersonations 関連)
+
+- ❌ 物理削除する(監査ログが消える)
+- ❌ Cookie のみで代理状態を信じる(必ず本テーブルと突合する)
+- ❌ INSERT/UPDATE の RLS ポリシーを書く(誤って staff 側から偽造できるようになる)
+
+### 2.8 `updated_at` 自動更新トリガ
 
 ```sql
 -- 共通の更新時刻トリガ関数
@@ -464,6 +521,7 @@ create trigger problems_set_updated_at
 | `problems` | 自分 + master + admin は全部 | 自分の owner_id のみ(master 化は service_role) | 自分の owner_id のみ(master 編集は service_role + admin チェック) | (使わない、論理削除を UPDATE) |
 | `tags` | master + 自分の個人タグ + admin は全件 | 個人は本人 / master は admin | 個人は本人 / master は admin | (使わない、論理削除を UPDATE) |
 | `problem_tags` | 親 problem が見える時のみ | 自分の個人問題に対してのみ | (使わない) | 自分の個人問題に対してのみ |
+| `impersonations` | admin のみ全件 | (Route Handler の service_role 経由のみ) | (Route Handler の service_role 経由のみ) | (使わない、永続的に残す) |
 
 **サービスロール(`service_role`)経由の書き込み**は RLS をバイパスする。Route Handler 内で:
 - 初回ログイン時の `users` 作成
