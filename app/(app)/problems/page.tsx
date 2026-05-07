@@ -1,5 +1,8 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { createServerSupabase } from "@/lib/supabase/server";
+import { createServiceSupabase } from "@/lib/supabase/service";
+import { getEffectiveUser } from "@/lib/auth/effective-user";
 import type { Problem } from "@/types/domain";
 import type { ProblemListSort } from "@/types/api";
 import { ProblemFilters } from "@/components/problems/ProblemFilters";
@@ -39,9 +42,20 @@ export default async function ProblemsListPage({
   searchParams: SearchParams;
 }) {
   const sp = await searchParams;
-  const supabase = await createServerSupabase();
+  const user = await getEffectiveUser();
+  if (!user) redirect("/login");
+
+  const supabase = user.isImpersonating
+    ? createServiceSupabase()
+    : await createServerSupabase();
 
   let query = supabase.from("problems").select("*").is("deleted_at", null);
+
+  if (user.isImpersonating) {
+    query = query.or(
+      `owner_id.is.null,owner_id.eq.${user.effectiveUserId}`,
+    );
+  }
 
   const q = sp.q?.trim();
   if (q) query = query.ilike("title", `%${q}%`);
