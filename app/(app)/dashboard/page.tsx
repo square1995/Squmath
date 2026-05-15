@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ROUTES } from "@/lib/constants";
 
 export default function DashboardPage() {
   return (
@@ -10,7 +11,7 @@ export default function DashboardPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-3xl">
         <Link
-          href="/problems"
+          href={ROUTES.PROBLEMS}
           className="block p-4 rounded-lg border border-slate-200 bg-white hover:border-slate-400"
         >
           <div className="text-base font-semibold mb-1">問題一覧</div>
@@ -19,7 +20,7 @@ export default function DashboardPage() {
           </div>
         </Link>
         <Link
-          href="/problems/new"
+          href={ROUTES.PROBLEMS_NEW}
           className="block p-4 rounded-lg border border-slate-200 bg-white hover:border-slate-400"
         >
           <div className="text-base font-semibold mb-1">問題を新規作成</div>

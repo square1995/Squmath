@@ -1,20 +1,21 @@
 import { redirect } from "next/navigation";
 import { createServiceSupabase } from "@/lib/supabase/service";
 import { getEffectiveUser } from "@/lib/auth/effective-user";
+import { ROUTES, TABLE } from "@/lib/constants";
 import { ImpersonateButton } from "@/components/admin/ImpersonateButton";
 import type { AppUser } from "@/types/domain";
 
 // admin 専用: 登録ユーザー一覧 + 代理操作ボタン
 export default async function AdminUsersPage() {
   const me = await getEffectiveUser();
-  if (!me) redirect("/login");
+  if (!me) redirect(ROUTES.LOGIN);
   if (me.realUserRole !== "admin") {
-    redirect("/dashboard");
+    redirect(ROUTES.DASHBOARD);
   }
 
   const service = createServiceSupabase();
   const { data, error } = await service
-    .from("users")
+    .from(TABLE.USERS)
     .select("id, email, display_name, role, created_at, updated_at, deleted_at")
     .is("deleted_at", null)
     .neq("id", me.realUser.id)

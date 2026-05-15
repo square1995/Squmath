@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { createServiceSupabase } from "@/lib/supabase/service";
 import { requireAdmin, IMPERSONATION_COOKIE } from "@/lib/auth/effective-user";
 import { ok, err } from "@/lib/api/response";
+import { TABLE } from "@/lib/constants";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -15,7 +16,7 @@ export async function DELETE(_request: Request, { params }: Ctx) {
   const service = createServiceSupabase();
 
   const { data, error } = await service
-    .from("impersonations")
+    .from(TABLE.IMPERSONATIONS)
     .update({ ended_at: new Date().toISOString() })
     .eq("id", id)
     .eq("admin_user_id", auth.user.realUser.id)

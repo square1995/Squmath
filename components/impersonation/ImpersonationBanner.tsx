@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { API, ROUTES } from "@/lib/constants";
 
 export function ImpersonationBanner({
   impersonationId,
@@ -20,7 +21,7 @@ export function ImpersonationBanner({
     setError(null);
     try {
       const res = await fetch(
-        `/api/admin/impersonations/${impersonationId}`,
+        `${API.ADMIN_IMPERSONATIONS}/${impersonationId}`,
         { method: "DELETE" },
       );
       const json = await res.json();
@@ -29,7 +30,7 @@ export function ImpersonationBanner({
         setBusy(false);
         return;
       }
-      router.push("/admin/users");
+      router.push(ROUTES.ADMIN_USERS);
       router.refresh();
     } catch (e) {
       console.error("[ImpersonationBanner] end failed", e);

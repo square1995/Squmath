@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { API, ROUTES } from "@/lib/constants";
 import type { Problem } from "@/types/domain";
 import { MathRenderer } from "@/components/math/MathRenderer";
 
@@ -18,7 +19,7 @@ export function ProblemEditor({ problem }: { problem: Problem }) {
     setSaving(true);
     setErrorMessage(null);
     try {
-      const res = await fetch(`/api/problems/${problem.id}`, {
+      const res = await fetch(`${API.PROBLEMS}/${problem.id}`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -50,7 +51,7 @@ export function ProblemEditor({ problem }: { problem: Problem }) {
     setDeleting(true);
     setErrorMessage(null);
     try {
-      const res = await fetch(`/api/problems/${problem.id}`, {
+      const res = await fetch(`${API.PROBLEMS}/${problem.id}`, {
         method: "DELETE",
       });
       const json = await res.json();
@@ -59,7 +60,7 @@ export function ProblemEditor({ problem }: { problem: Problem }) {
         setDeleting(false);
         return;
       }
-      router.push("/problems");
+      router.push(ROUTES.PROBLEMS);
     } catch (e) {
       console.error("[problems/[id]] delete failed", e);
       setErrorMessage("通信に失敗しました。再度お試しください");
@@ -120,7 +121,7 @@ export function ProblemEditor({ problem }: { problem: Problem }) {
               {saving ? "保存中..." : "保存"}
             </button>
             <Link
-              href="/problems"
+              href={ROUTES.PROBLEMS}
               className="px-4 py-2 rounded text-sm border border-slate-300 hover:bg-slate-50"
             >
               一覧へ戻る

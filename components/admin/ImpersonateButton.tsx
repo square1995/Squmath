@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { API, ROUTES } from "@/lib/constants";
 
 export function ImpersonateButton({
   targetUserId,
@@ -28,7 +29,7 @@ export function ImpersonateButton({
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch("/api/admin/impersonations", {
+      const res = await fetch(API.ADMIN_IMPERSONATIONS, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ target_user_id: targetUserId }),
@@ -40,7 +41,7 @@ export function ImpersonateButton({
         return;
       }
       // 開始後はダッシュボードへ。バナーが上部に出る
-      router.push("/dashboard");
+      router.push(ROUTES.DASHBOARD);
       router.refresh();
     } catch (e) {
       console.error("[ImpersonateButton] failed", e);

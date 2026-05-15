@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { createServiceSupabase } from "@/lib/supabase/service";
 import { err } from "@/lib/api/response";
+import { TABLE } from "@/lib/constants";
 import type { User, SupabaseClient } from "@supabase/supabase-js";
 import type { AppUserRole } from "@/types/domain";
 
@@ -30,7 +31,7 @@ export async function getEffectiveUser(): Promise<EffectiveUser | null> {
   if (!user) return null;
 
   const { data: profile } = await supabase
-    .from("users")
+    .from(TABLE.USERS)
     .select("role")
     .eq("id", user.id)
     .maybeSingle();
@@ -53,7 +54,7 @@ export async function getEffectiveUser(): Promise<EffectiveUser | null> {
   // 代理セッションの有効性は service_role で確認(他人が改ざんした Cookie を弾く)
   const service = createServiceSupabase();
   const { data: imp } = await service
-    .from("impersonations")
+    .from(TABLE.IMPERSONATIONS)
     .select("id, admin_user_id, target_user_id, started_at, ended_at")
     .eq("id", cookieValue)
     .maybeSingle();

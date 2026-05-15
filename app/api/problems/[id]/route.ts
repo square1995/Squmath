@@ -5,6 +5,7 @@ import {
   getWriteClient,
 } from "@/lib/auth/effective-user";
 import { ok, err } from "@/lib/api/response";
+import { TABLE } from "@/lib/constants";
 import type { UpdateProblemBody } from "@/types/api";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -22,7 +23,7 @@ export async function GET(_request: Request, { params }: Ctx) {
     : await createServerSupabase();
 
   const { data, error } = await supabase
-    .from("problems")
+    .from(TABLE.PROBLEMS)
     .select("*")
     .eq("id", id)
     .maybeSingle();
@@ -75,7 +76,7 @@ export async function PUT(request: Request, { params }: Ctx) {
 
   // 代理中は RLS が効かないため、effectiveUserId を必ずフィルタに入れる
   const { data, error } = await supabase
-    .from("problems")
+    .from(TABLE.PROBLEMS)
     .update(update)
     .eq("id", id)
     .eq("owner_id", auth.user.effectiveUserId)
@@ -105,7 +106,7 @@ export async function DELETE(_request: Request, { params }: Ctx) {
   const supabase = await getWriteClient(auth.user);
 
   const { data, error } = await supabase
-    .from("problems")
+    .from(TABLE.PROBLEMS)
     .update({ deleted_at: new Date().toISOString() })
     .eq("id", id)
     .eq("owner_id", auth.user.effectiveUserId)

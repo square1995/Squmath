@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { createServiceSupabase } from "@/lib/supabase/service";
 import { requireAdmin, IMPERSONATION_COOKIE } from "@/lib/auth/effective-user";
 import { ok, err } from "@/lib/api/response";
+import { TABLE } from "@/lib/constants";
 
 type StartBody = {
   target_user_id?: string;
@@ -26,7 +27,7 @@ export async function POST(request: Request) {
   const service = createServiceSupabase();
 
   const { data: target, error: targetError } = await service
-    .from("users")
+    .from(TABLE.USERS)
     .select("id, email, display_name")
     .eq("id", body.target_user_id)
     .is("deleted_at", null)
@@ -42,7 +43,7 @@ export async function POST(request: Request) {
 
   // 既存の active セッションを終了
   const { error: closeError } = await service
-    .from("impersonations")
+    .from(TABLE.IMPERSONATIONS)
     .update({ ended_at: new Date().toISOString() })
     .eq("admin_user_id", auth.user.realUser.id)
     .is("ended_at", null);
@@ -61,7 +62,7 @@ export async function POST(request: Request) {
       : null;
 
   const { data: imp, error: insertError } = await service
-    .from("impersonations")
+    .from(TABLE.IMPERSONATIONS)
     .insert({
       admin_user_id: auth.user.realUser.id,
       target_user_id: target.id,

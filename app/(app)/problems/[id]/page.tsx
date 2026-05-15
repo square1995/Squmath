@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { createServiceSupabase } from "@/lib/supabase/service";
 import { getEffectiveUser } from "@/lib/auth/effective-user";
+import { ROUTES, TABLE } from "@/lib/constants";
 import type { Problem } from "@/types/domain";
 import { ProblemEditor } from "@/components/problems/ProblemEditor";
 
@@ -12,14 +13,14 @@ export default async function ProblemEditPage({
 }) {
   const { id } = await params;
   const user = await getEffectiveUser();
-  if (!user) redirect("/login");
+  if (!user) redirect(ROUTES.LOGIN);
 
   const supabase = user.isImpersonating
     ? createServiceSupabase()
     : await createServerSupabase();
 
   const { data, error } = await supabase
-    .from("problems")
+    .from(TABLE.PROBLEMS)
     .select("*")
     .eq("id", id)
     .maybeSingle();
