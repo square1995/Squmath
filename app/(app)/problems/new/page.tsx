@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { API, ROUTES } from "@/lib/constants";
 
 export default function NewProblemPage() {
   const router = useRouter();
@@ -16,7 +17,7 @@ export default function NewProblemPage() {
     setErrorMessage(null);
 
     try {
-      const res = await fetch("/api/problems", {
+      const res = await fetch(API.PROBLEMS, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -31,7 +32,7 @@ export default function NewProblemPage() {
         setSaving(false);
         return;
       }
-      router.push(`/problems/${json.data.id}`);
+      router.push(`${ROUTES.PROBLEMS}/${json.data.id}`);
     } catch (e) {
       console.error("[problems/new] save failed", e);
       setErrorMessage("通信に失敗しました。再度お試しください");
@@ -90,7 +91,7 @@ export default function NewProblemPage() {
             {saving ? "保存中..." : "保存"}
           </button>
           <Link
-            href="/problems"
+            href={ROUTES.PROBLEMS}
             className="px-4 py-2 rounded text-sm border border-slate-300 hover:bg-slate-50"
           >
             キャンセル

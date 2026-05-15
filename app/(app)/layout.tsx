@@ -4,6 +4,7 @@ import { createServiceSupabase } from "@/lib/supabase/service";
 import { getEffectiveUser } from "@/lib/auth/effective-user";
 import { SignOutButton } from "@/components/ui/SignOutButton";
 import { ImpersonationBanner } from "@/components/impersonation/ImpersonationBanner";
+import { APP_NAME, ROUTES, TABLE } from "@/lib/constants";
 
 // 認証必須ページのレイアウト。
 // Server Component で auth + 代理状態をチェック。
@@ -14,7 +15,7 @@ export default async function AppLayout({
 }) {
   const me = await getEffectiveUser();
   if (!me) {
-    redirect("/login");
+    redirect(ROUTES.LOGIN);
   }
 
   // 代理対象 staff の表示名を取得(バナー用)
@@ -22,7 +23,7 @@ export default async function AppLayout({
   if (me.isImpersonating && me.impersonation) {
     const service = createServiceSupabase();
     const { data: target } = await service
-      .from("users")
+      .from(TABLE.USERS)
       .select("display_name, email")
       .eq("id", me.impersonation.target_user_id)
       .maybeSingle();
@@ -48,19 +49,19 @@ export default async function AppLayout({
       <div className="flex flex-1">
         <aside className="w-56 bg-slate-900 text-slate-100 flex flex-col">
           <div className="px-5 py-4 border-b border-slate-800">
-            <Link href="/dashboard" className="text-lg font-bold">
-              Squmath
+            <Link href={ROUTES.DASHBOARD} className="text-lg font-bold">
+              {APP_NAME}
             </Link>
           </div>
           <nav className="flex-1 px-2 py-4 space-y-1 text-sm">
             <Link
-              href="/dashboard"
+              href={ROUTES.DASHBOARD}
               className="block px-3 py-2 rounded hover:bg-slate-800"
             >
               ダッシュボード
             </Link>
             <Link
-              href="/problems"
+              href={ROUTES.PROBLEMS}
               className="block px-3 py-2 rounded hover:bg-slate-800"
             >
               問題一覧
@@ -71,7 +72,7 @@ export default async function AppLayout({
                   管理者メニュー
                 </div>
                 <Link
-                  href="/admin/users"
+                  href={ROUTES.ADMIN_USERS}
                   className="block px-3 py-2 rounded hover:bg-slate-800"
                 >
                   ユーザー管理

@@ -1,6 +1,7 @@
 import { createServiceSupabase } from "@/lib/supabase/service";
 import { requireEffectiveUser } from "@/lib/auth/effective-user";
 import { ok, err } from "@/lib/api/response";
+import { TABLE } from "@/lib/constants";
 
 // GET /api/me/impersonation
 // 現在のセッションが代理中かどうか + 代理対象ユーザー情報を返す。
@@ -19,7 +20,7 @@ export async function GET() {
 
   const service = createServiceSupabase();
   const { data: target, error } = await service
-    .from("users")
+    .from(TABLE.USERS)
     .select("id, email, display_name")
     .eq("id", auth.user.impersonation.target_user_id)
     .maybeSingle();

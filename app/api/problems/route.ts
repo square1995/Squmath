@@ -5,26 +5,13 @@ import {
   getWriteClient,
 } from "@/lib/auth/effective-user";
 import { ok, err } from "@/lib/api/response";
+import { TABLE, SORT_MAP, PAGINATION } from "@/lib/constants";
 import type {
   CreateProblemBody,
   ProblemListResponse,
   ProblemListSort,
 } from "@/types/api";
 import type { Problem } from "@/types/domain";
-
-const SORT_MAP: Record<
-  ProblemListSort,
-  { column: "updated_at" | "created_at" | "title"; ascending: boolean }
-> = {
-  updated_desc: { column: "updated_at", ascending: false },
-  updated_asc: { column: "updated_at", ascending: true },
-  created_desc: { column: "created_at", ascending: false },
-  created_asc: { column: "created_at", ascending: true },
-  title_asc: { column: "title", ascending: true },
-};
-
-const DEFAULT_LIMIT = 50;
-const MAX_LIMIT = 100;
 
 // GET /api/problems  一覧取得(削除済みは除外)
 // クエリ: q / subject / school_level / grade / unit / difficulty / sort / limit / offset
@@ -46,8 +33,8 @@ export async function GET(request: Request) {
   const offsetRaw = parseInt(sp.get("offset") ?? "", 10);
   const limit =
     Number.isFinite(limitRaw) && limitRaw > 0
-      ? Math.min(limitRaw, MAX_LIMIT)
-      : DEFAULT_LIMIT;
+      ? Math.min(limitRaw, PAGINATION.MAX_LIMIT)
+      : PAGINATION.DEFAULT_LIMIT;
   const offset =
     Number.isFinite(offsetRaw) && offsetRaw >= 0 ? offsetRaw : 0;
 
@@ -58,7 +45,7 @@ export async function GET(request: Request) {
     ? createServiceSupabase()
     : await createServerSupabase();
 
-  let query = supabase.from("problems").select("*").is("deleted_at", null);
+  let query = supabase.from(TABLE.PROBLEMS).select("*").is("deleted_at", null);
 
   if (auth.user.isImpersonating) {
     query = query.or(
@@ -120,7 +107,7 @@ export async function POST(request: Request) {
 
   const supabase = await getWriteClient(auth.user);
   const { data, error } = await supabase
-    .from("problems")
+    .from(TABLE.PROBLEMS)
     .insert({
       owner_id: auth.user.effectiveUserId,
       title: body.title.trim(),

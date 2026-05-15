@@ -1,6 +1,7 @@
 import { createServiceSupabase } from "@/lib/supabase/service";
 import { requireAdmin } from "@/lib/auth/effective-user";
 import { ok, err } from "@/lib/api/response";
+import { TABLE } from "@/lib/constants";
 import type { AppUser } from "@/types/domain";
 
 // GET /api/admin/users  登録ユーザー一覧(自分以外、削除済み除外)
@@ -11,7 +12,7 @@ export async function GET() {
 
   const service = createServiceSupabase();
   const { data, error } = await service
-    .from("users")
+    .from(TABLE.USERS)
     .select("id, email, display_name, role, created_at, updated_at, deleted_at")
     .is("deleted_at", null)
     .neq("id", auth.user.realUser.id)

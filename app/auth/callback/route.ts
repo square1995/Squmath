@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { createServiceSupabase } from "@/lib/supabase/service";
+import { TABLE, ROUTES } from "@/lib/constants";
 
 // Google OAuth のコールバックを受けて、
 //  1. code をセッションに交換
@@ -13,7 +14,7 @@ export async function GET(request: Request) {
   const origin = url.origin;
 
   if (!code) {
-    return NextResponse.redirect(`${origin}/login?error=callback_failed`);
+    return NextResponse.redirect(`${origin}${ROUTES.LOGIN}?error=callback_failed`);
   }
 
   const supabase = await createServerSupabase();
@@ -21,20 +22,20 @@ export async function GET(request: Request) {
     await supabase.auth.exchangeCodeForSession(code);
   if (exchangeError) {
     console.error("[auth/callback] exchange failed", exchangeError);
-    return NextResponse.redirect(`${origin}/login?error=callback_failed`);
+    return NextResponse.redirect(`${origin}${ROUTES.LOGIN}?error=callback_failed`);
   }
 
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user || !user.email) {
-    return NextResponse.redirect(`${origin}/login?error=callback_failed`);
+    return NextResponse.redirect(`${origin}${ROUTES.LOGIN}?error=callback_failed`);
   }
 
   // allowed_emails の確認は service_role で(staff も自分宛て以外は読めないため)
   const service = createServiceSupabase();
   const { data: allowed, error: allowedError } = await service
-    .from("allowed_emails")
+    .from(TABLE.ALLOWED_EMAILS)
     .select("email")
     .eq("email", user.email)
     .maybeSingle();
@@ -42,17 +43,17 @@ export async function GET(request: Request) {
   if (allowedError) {
     console.error("[auth/callback] allowed_emails query failed", allowedError);
     await supabase.auth.signOut();
-    return NextResponse.redirect(`${origin}/login?error=callback_failed`);
+    return NextResponse.redirect(`${origin}${ROUTES.LOGIN}?error=callback_failed`);
   }
 
   if (!allowed) {
     // 許可リストに入っていない → サインアウトしてエラー表示
     await supabase.auth.signOut();
-    return NextResponse.redirect(`${origin}/login?error=not_allowed`);
+    return NextResponse.redirect(`${origin}${ROUTES.LOGIN}?error=not_allowed`);
   }
 
   // public.users に upsert(初回ログイン時のみ作成)
-  const { error: upsertError } = await service.from("users").upsert(
+  const { error: upsertError } = await service.from(TABLE.USERS).upsert(
     {
       id: user.id,
       email: user.email,
@@ -66,8 +67,8 @@ export async function GET(request: Request) {
   if (upsertError) {
     console.error("[auth/callback] users upsert failed", upsertError);
     await supabase.auth.signOut();
-    return NextResponse.redirect(`${origin}/login?error=callback_failed`);
+    return NextResponse.redirect(`${origin}${ROUTES.LOGIN}?error=callback_failed`);
   }
 
-  return NextResponse.redirect(`${origin}/dashboard`);
+  return NextResponse.redirect(`${origin}${ROUTES.DASHBOARD}`);
 }

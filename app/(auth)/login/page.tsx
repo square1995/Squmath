@@ -3,6 +3,7 @@
 import { useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { createBrowserSupabase } from "@/lib/supabase/client";
+import { APP_NAME } from "@/lib/constants";
 
 function LoginInner() {
   const searchParams = useSearchParams();
@@ -28,7 +29,7 @@ function LoginInner() {
   return (
     <main className="min-h-screen flex items-center justify-center px-4">
       <div className="w-full max-w-sm bg-white border border-slate-200 rounded-lg shadow-sm p-8">
-        <h1 className="text-2xl font-bold mb-2 text-center">Squmath</h1>
+        <h1 className="text-2xl font-bold mb-2 text-center">{APP_NAME}</h1>
         <p className="text-sm text-slate-600 mb-6 text-center">
           ログインして利用を開始してください
         </p>

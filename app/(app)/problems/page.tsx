@@ -3,22 +3,10 @@ import { redirect } from "next/navigation";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { createServiceSupabase } from "@/lib/supabase/service";
 import { getEffectiveUser } from "@/lib/auth/effective-user";
+import { ROUTES, TABLE, SORT_MAP, PAGINATION } from "@/lib/constants";
 import type { Problem } from "@/types/domain";
 import type { ProblemListSort } from "@/types/api";
 import { ProblemFilters } from "@/components/problems/ProblemFilters";
-
-const PAGE_LIMIT = 50;
-
-const SORT_MAP: Record<
-  ProblemListSort,
-  { column: "updated_at" | "created_at" | "title"; ascending: boolean }
-> = {
-  updated_desc: { column: "updated_at", ascending: false },
-  updated_asc: { column: "updated_at", ascending: true },
-  created_desc: { column: "created_at", ascending: false },
-  created_asc: { column: "created_at", ascending: true },
-  title_asc: { column: "title", ascending: true },
-};
 
 type SearchParams = Promise<{
   q?: string;
@@ -43,13 +31,13 @@ export default async function ProblemsListPage({
 }) {
   const sp = await searchParams;
   const user = await getEffectiveUser();
-  if (!user) redirect("/login");
+  if (!user) redirect(ROUTES.LOGIN);
 
   const supabase = user.isImpersonating
     ? createServiceSupabase()
     : await createServerSupabase();
 
-  let query = supabase.from("problems").select("*").is("deleted_at", null);
+  let query = supabase.from(TABLE.PROBLEMS).select("*").is("deleted_at", null);
 
   if (user.isImpersonating) {
     query = query.or(
@@ -76,19 +64,19 @@ export default async function ProblemsListPage({
 
   query = query
     .order(sortRule.column, { ascending: sortRule.ascending })
-    .range(0, PAGE_LIMIT);
+    .range(0, PAGINATION.DEFAULT_LIMIT);
 
   const { data, error } = await query;
   const rows = (data as Problem[] | null) ?? [];
-  const hasMore = rows.length > PAGE_LIMIT;
-  const problems = hasMore ? rows.slice(0, PAGE_LIMIT) : rows;
+  const hasMore = rows.length > PAGINATION.DEFAULT_LIMIT;
+  const problems = hasMore ? rows.slice(0, PAGINATION.DEFAULT_LIMIT) : rows;
 
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold">問題一覧</h1>
         <Link
-          href="/problems/new"
+          href={ROUTES.PROBLEMS_NEW}
           className="inline-flex items-center px-3 py-1.5 rounded text-sm bg-slate-900 text-white hover:bg-slate-800"
         >
           新規作成
@@ -107,7 +95,7 @@ export default async function ProblemsListPage({
         表示中: {problems.length} 件
         {hasMore && (
           <span className="ml-1 text-amber-700">
-            (上限 {PAGE_LIMIT} 件で打ち切り。さらに絞り込んでください)
+            (上限 {PAGINATION.DEFAULT_LIMIT} 件で打ち切り。さらに絞り込んでください)
           </span>
         )}
       </div>

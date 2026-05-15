@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import "katex/dist/katex.min.css";
+import { APP_NAME } from "@/lib/constants";
 
 export const metadata: Metadata = {
-  title: "Squmath",
+  title: APP_NAME,
   description: "数学プリント作成 Web アプリ",
 };
 
